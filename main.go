@@ -22,7 +22,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := model.NewApp(doc, writer.WriteComment)
+	app := model.NewApp(doc, writer.WriteComment, writer.UpdateComment, writer.DeleteComment)
 	p := tea.NewProgram(app)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

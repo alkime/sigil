@@ -130,6 +130,92 @@ func TestWriteComment_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestUpdateComment(t *testing.T) {
+	content := `# Doc
+
+<!-- @review-ref 0001 -->
+Some text.
+
+<!--
+@review-backmatter
+
+"0001":
+  offset: 1
+  span: 1
+  comment: "Original"
+  status: open
+-->
+`
+	tmp := writeTempFile(t, content)
+	doc, err := parser.Parse(tmp)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	doc, err = UpdateComment(doc, "0001", "Updated text", "resolved")
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	c := doc.CommentByID["0001"]
+	if c == nil {
+		t.Fatal("comment 0001 not found after update")
+	}
+	if c.Comment != "Updated text" {
+		t.Errorf("expected 'Updated text', got %q", c.Comment)
+	}
+	if c.Status != "resolved" {
+		t.Errorf("expected 'resolved', got %q", c.Status)
+	}
+}
+
+func TestDeleteComment(t *testing.T) {
+	content := `# Doc
+
+<!-- @review-ref 0001 -->
+Line A.
+
+<!-- @review-ref 0002 -->
+Line B.
+
+<!--
+@review-backmatter
+
+"0001":
+  offset: 1
+  span: 1
+  comment: "First"
+  status: open
+
+"0002":
+  offset: 1
+  span: 1
+  comment: "Second"
+  status: open
+-->
+`
+	tmp := writeTempFile(t, content)
+	doc, err := parser.Parse(tmp)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	doc, err = DeleteComment(doc, "0001")
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	if len(doc.Comments) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(doc.Comments))
+	}
+	if doc.Comments[0].ID != "0002" {
+		t.Errorf("expected remaining comment 0002, got %s", doc.Comments[0].ID)
+	}
+	if len(doc.RefMarkers) != 1 {
+		t.Errorf("expected 1 ref marker, got %d", len(doc.RefMarkers))
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	tmp := filepath.Join(t.TempDir(), "test.md")

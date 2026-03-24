@@ -11,17 +11,19 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// WriteFunc is the signature for the comment-writing callback injected from main.
+// Callback types injected from main to avoid import cycles.
 type WriteFunc func(doc *Document, sourceLine int, span int, comment string) (*Document, error)
+type UpdateFunc func(doc *Document, id string, newText string, newStatus string) (*Document, error)
+type DeleteFunc func(doc *Document, id string) (*Document, error)
 
 // AppState represents the current UI mode.
 type AppState int
 
 const (
 	StateBrowse AppState = iota
-	StateInspect
+	StateInspect // edit modal for existing comment
 	StateHelp
-	StateComment
+	StateComment // create modal for new comment
 )
 
 // navState holds navigation state shared via pointer so that gutter/style
@@ -48,7 +50,6 @@ type AppModel struct {
 	doc          *Document
 	viewport     viewport.Model
 	statusbar    StatusBarModel
-	modal        ModalModel
 	commentModal *CommentModal
 	state        AppState
 	width        int
@@ -56,18 +57,22 @@ type AppModel struct {
 	isDark       bool
 	nav          *navState
 	writeFn      WriteFunc
+	updateFn     UpdateFunc
+	deleteFn     DeleteFunc
 
 	renderedContent string
 }
 
 // NewApp creates a new AppModel from a parsed Document.
-func NewApp(doc *Document, writeFn WriteFunc) AppModel {
+func NewApp(doc *Document, writeFn WriteFunc, updateFn UpdateFunc, deleteFn DeleteFunc) AppModel {
 	return AppModel{
-		doc:     doc,
-		state:   StateBrowse,
-		isDark:  true,
-		nav:     &navState{},
-		writeFn: writeFn,
+		doc:      doc,
+		state:    StateBrowse,
+		isDark:   true,
+		nav:      &navState{},
+		writeFn:  writeFn,
+		updateFn: updateFn,
+		deleteFn: deleteFn,
 	}
 }
 
@@ -108,9 +113,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, cmd
-	case StateComment:
+	case StateComment, StateInspect:
 		if m.commentModal != nil {
-			_, cmd := m.commentModal.Update(msg)
+			cmd := m.commentModal.Update(msg)
 			return m, cmd
 		}
 	}
@@ -150,6 +155,18 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.handleEnter()
 
+	case "r":
+		if m.nav.commentedBlocks[m.nav.selector.CursorBlock] {
+			return m.handleResolve()
+		}
+		return m, nil
+
+	case "d":
+		if m.nav.commentedBlocks[m.nav.selector.CursorBlock] {
+			return m.handleDelete()
+		}
+		// Fall through to viewport (half-page down)
+
 	case "g":
 		m.viewport.GotoTop()
 		m.nav.selector.CursorBlock = 0
@@ -176,7 +193,49 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handleEnter: context-sensitive — inspect existing comment or create new one.
+// handleResolve toggles open/resolved on the focused block's comment.
+func (m AppModel) handleResolve() (tea.Model, tea.Cmd) {
+	comment := m.focusedComment()
+	if comment == nil {
+		return m, nil
+	}
+	newStatus := "resolved"
+	if comment.Status == "resolved" {
+		newStatus = "open"
+	}
+	newDoc, err := m.updateFn(m.doc, comment.ID, comment.Comment, newStatus)
+	if err == nil {
+		m.doc = newDoc
+		m.initViewport()
+	}
+	return m, nil
+}
+
+// handleDelete: two-stage — first resolves, then prompts for hard delete.
+func (m AppModel) handleDelete() (tea.Model, tea.Cmd) {
+	comment := m.focusedComment()
+	if comment == nil {
+		return m, nil
+	}
+	if comment.Status == "open" {
+		// First d: soft delete (resolve)
+		newDoc, err := m.updateFn(m.doc, comment.ID, comment.Comment, "resolved")
+		if err == nil {
+			m.doc = newDoc
+			m.initViewport()
+		}
+		return m, nil
+	}
+	// Already resolved: open confirm-delete modal
+	snippet := m.buildSnippetForComment(comment)
+	cm := newEditModal(comment, snippet, m.width, m.height)
+	cm.SetConfirmDelete()
+	m.commentModal = &cm
+	m.state = StateInspect
+	return m, nil
+}
+
+// handleEnter: context-sensitive — edit existing comment or create new one.
 func (m AppModel) handleEnter() (tea.Model, tea.Cmd) {
 	if m.nav.commentedBlocks[m.nav.selector.CursorBlock] {
 		m.openInspectForBlock()
@@ -192,13 +251,54 @@ func (m AppModel) handleEnter() (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "q":
+	if m.commentModal == nil {
 		m.state = StateBrowse
-		m.modal = ModalModel{}
 		return m, nil
 	}
-	return m, nil
+
+	// Handle confirm-delete sub-state
+	if m.commentModal.mode == ModalConfirmDelete {
+		switch msg.String() {
+		case "y":
+			newDoc, err := m.deleteFn(m.doc, m.commentModal.commentID)
+			if err == nil {
+				m.doc = newDoc
+			}
+			m.commentModal = nil
+			m.state = StateBrowse
+			m.initViewport()
+			return m, nil
+		case "n", "esc":
+			m.commentModal = nil
+			m.state = StateBrowse
+			return m, nil
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.commentModal = nil
+		m.state = StateBrowse
+		return m, nil
+
+	case "ctrl+s":
+		text := strings.TrimSpace(m.commentModal.Value())
+		if text != "" {
+			newDoc, err := m.updateFn(m.doc, m.commentModal.commentID, text, m.commentModal.status)
+			if err == nil {
+				m.doc = newDoc
+			}
+		}
+		m.commentModal = nil
+		m.state = StateBrowse
+		m.initViewport()
+		return m, nil
+	}
+
+	// Pass to textarea
+	cmd := m.commentModal.Update(msg)
+	return m, cmd
 }
 
 func (m AppModel) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -222,7 +322,7 @@ func (m AppModel) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.state = StateBrowse
 		return m, nil
 
-	case "enter":
+	case "ctrl+s":
 		text := strings.TrimSpace(m.commentModal.Value())
 		if text == "" {
 			return m, nil
@@ -241,7 +341,7 @@ func (m AppModel) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	_, cmd := m.commentModal.Update(msg)
+	cmd := m.commentModal.Update(msg)
 	return m, cmd
 }
 
@@ -254,14 +354,12 @@ func (m AppModel) View() tea.View {
 
 	var content string
 	switch m.state {
-	case StateInspect:
-		content = m.modal.View(m.isDark)
-	case StateHelp:
-		content = m.renderHelp()
-	case StateComment:
+	case StateInspect, StateComment:
 		if m.commentModal != nil {
 			content = m.commentModal.View(m.isDark)
 		}
+	case StateHelp:
+		content = m.renderHelp()
 	default:
 		vpView := m.viewport.View()
 		sbView := m.statusbar.View(m.isDark)
@@ -281,10 +379,10 @@ func (m AppModel) renderHelp() string {
 	bindings := []struct{ key, desc string }{
 		{"j / ↓", "Next block"},
 		{"k / ↑", "Previous block"},
-		{"n", "Next comment"},
-		{"N", "Previous comment"},
-		{"Enter", "Inspect or add comment"},
-		{"d", "Half-page down"},
+		{"n / N", "Next / prev comment"},
+		{"Enter", "Edit or add comment"},
+		{"r", "Resolve / reopen"},
+		{"d", "Delete (on comment) / ½ page down"},
 		{"u", "Half-page up"},
 		{"g", "Go to top"},
 		{"G", "Go to bottom"},
@@ -317,7 +415,7 @@ func (m *AppModel) openCommentModal(sel SelectionResult) {
 	}
 	snippet := strings.Join(numbered, "\n")
 
-	cm := newCommentModal(snippet, sel, m.width, m.height)
+	cm := newCreateModal(snippet, sel, m.width, m.height)
 	m.commentModal = &cm
 	m.state = StateComment
 }
@@ -340,7 +438,8 @@ func (m *AppModel) openInspectForBlock() {
 			continue
 		}
 		snippet := m.buildSnippet(comment, ids[0])
-		m.modal = newInspectModal(comment, snippet, m.width, m.height)
+		cm := newEditModal(comment, snippet, m.width, m.height)
+		m.commentModal = &cm
 		m.state = StateInspect
 		return
 	}
@@ -480,13 +579,15 @@ func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 		return style.Render("▸ ")
 	}
 
-	// Check if this line is in a commented block
-	for ri := ctx.Index; ri >= 0; ri-- {
-		if _, ok := m.nav.renderedToComments[ctx.Index]; ok {
-			markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800"))
-			return markerStyle.Render("● ")
+	// Check if this line has a comment
+	if ids, ok := m.nav.renderedToComments[ctx.Index]; ok && len(ids) > 0 {
+		// Check if the comment is resolved
+		if c, ok := m.doc.CommentByID[ids[0]]; ok && c.Status == "resolved" {
+			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+			return style.Render("✓ ")
 		}
-		break
+		markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800"))
+		return markerStyle.Render("● ")
 	}
 
 	return "  "
@@ -498,6 +599,29 @@ func (m *AppModel) styleLineFunc(lineIdx int) lipgloss.Style {
 		return lipgloss.NewStyle().Background(lipgloss.Color("#2D4F7C"))
 	}
 	return lipgloss.NewStyle()
+}
+
+// focusedComment returns the comment on the currently focused block, or nil.
+func (m *AppModel) focusedComment() *ReviewComment {
+	b := m.nav.selector.CurrentBlock()
+	if b == nil {
+		return nil
+	}
+	for ri := b.RenderedStart; ri <= b.RenderedEnd; ri++ {
+		ids, ok := m.nav.renderedToComments[ri]
+		if !ok || len(ids) == 0 {
+			continue
+		}
+		if c, ok := m.doc.CommentByID[ids[0]]; ok {
+			return c
+		}
+	}
+	return nil
+}
+
+// buildSnippetForComment builds a numbered source snippet for any comment.
+func (m *AppModel) buildSnippetForComment(comment *ReviewComment) string {
+	return m.buildSnippet(comment, comment.ID)
 }
 
 func (m *AppModel) buildSnippet(comment *ReviewComment, id string) string {

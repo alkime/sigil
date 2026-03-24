@@ -4,124 +4,112 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
-// ModalModel renders an inspect overlay showing a comment and its source context.
-type ModalModel struct {
-	comment *ReviewComment
-	snippet string // source lines covered by the comment
-	width   int
-	height  int
-}
+// ModalMode distinguishes new comment creation from editing an existing one.
+type ModalMode int
 
-func newInspectModal(comment *ReviewComment, snippet string, width, height int) ModalModel {
-	return ModalModel{
-		comment: comment,
-		snippet: snippet,
-		width:   width,
-		height:  height,
-	}
-}
+const (
+	ModalCreate ModalMode = iota
+	ModalEdit
+	ModalConfirmDelete
+)
 
-func (m ModalModel) View(isDark bool) string {
-	if m.comment == nil {
-		return ""
-	}
-
-	modalWidth := min(m.width-4, 80)
-	innerWidth := modalWidth - 6 // border (2) + padding (4)
-
-	// Status badge
-	statusStyle := lipgloss.NewStyle().Bold(true)
-	if m.comment.Status == "open" {
-		statusStyle = statusStyle.Foreground(lipgloss.Color("#FF8800"))
-	} else {
-		statusStyle = statusStyle.Foreground(lipgloss.Color("#00CC66"))
-	}
-	title := fmt.Sprintf("Review Comment [%s] %s", m.comment.ID, statusStyle.Render(m.comment.Status))
-
-	// Source snippet (dimmed, truncated)
-	snippetStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#888888")).
-		Width(innerWidth)
-	snippetLines := strings.Split(m.snippet, "\n")
-	if len(snippetLines) > 6 {
-		snippetLines = append(snippetLines[:5], "...")
-	}
-	snippetBlock := snippetStyle.Render(strings.Join(snippetLines, "\n"))
-
-	// Separator
-	sep := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#555555")).
-		Render(strings.Repeat("─", innerWidth))
-
-	// Comment text
-	commentStyle := lipgloss.NewStyle().Width(innerWidth)
-	commentBlock := commentStyle.Render(m.comment.Comment)
-
-	// Footer
-	footerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#888888"))
-	footer := footerStyle.Render("[Esc] Close")
-
-	content := strings.Join([]string{title, "", snippetBlock, sep, commentBlock, "", footer}, "\n")
-
-	return renderModalBox(content, modalWidth, m.width, m.height, isDark)
-}
-
-// CommentModal is the create-comment modal with an embedded textarea.
+// CommentModal handles both creating new comments and editing existing ones.
 type CommentModal struct {
 	textarea  textarea.Model
 	snippet   string
-	selection SelectionResult
+	mode      ModalMode
 	width     int
 	height    int
+
+	// For new comments
+	selection SelectionResult
+
+	// For editing existing comments
+	commentID string
+	status    string // "open" or "resolved"
 }
 
-func newCommentModal(snippet string, sel SelectionResult, width, height int) CommentModal {
-	ta := textarea.New()
-	ta.SetWidth(min(width-4, 80) - 8) // inner width minus some padding
-	ta.SetHeight(5)
-	ta.Focus()
-	// Rebind InsertNewline to Shift+Enter so Enter can submit
-	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter"))
-
+func newCreateModal(snippet string, sel SelectionResult, width, height int) CommentModal {
+	ta := makeTextarea(width)
 	return CommentModal{
 		textarea:  ta,
 		snippet:   snippet,
+		mode:      ModalCreate,
 		selection: sel,
 		width:     width,
 		height:    height,
 	}
 }
 
-// Update handles textarea input. Returns true if the user submitted (Enter).
-func (m *CommentModal) Update(msg tea.Msg) (bool, tea.Cmd) {
-	var cmd tea.Cmd
-	m.textarea, cmd = m.textarea.Update(msg)
-	return false, cmd
+func newEditModal(comment *ReviewComment, snippet string, width, height int) CommentModal {
+	ta := makeTextarea(width)
+	ta.SetValue(comment.Comment)
+	return CommentModal{
+		textarea:  ta,
+		snippet:   snippet,
+		mode:      ModalEdit,
+		commentID: comment.ID,
+		status:    comment.Status,
+		width:     width,
+		height:    height,
+	}
 }
 
-// Value returns the current textarea content.
+func makeTextarea(width int) textarea.Model {
+	ta := textarea.New()
+	ta.SetWidth(min(width-4, 80) - 8)
+	ta.SetHeight(5)
+	ta.Focus()
+	// Enter inserts newlines (default). Submit is Ctrl+S, handled by parent.
+	return ta
+}
+
+func (m *CommentModal) Update(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return cmd
+}
+
 func (m *CommentModal) Value() string {
 	return m.textarea.Value()
 }
 
-// FocusCmd returns the command to focus the textarea (cursor blink etc).
 func (m *CommentModal) FocusCmd() tea.Cmd {
 	return m.textarea.Focus()
+}
+
+func (m *CommentModal) SetConfirmDelete() {
+	m.mode = ModalConfirmDelete
+}
+
+func (m *CommentModal) CancelConfirmDelete() {
+	m.mode = ModalEdit
 }
 
 func (m CommentModal) View(isDark bool) string {
 	modalWidth := min(m.width-4, 80)
 	innerWidth := modalWidth - 6
 
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF8800"))
-	title := titleStyle.Render("New Comment")
+	titleStyle := lipgloss.NewStyle().Bold(true)
+
+	var title string
+	switch m.mode {
+	case ModalCreate:
+		title = titleStyle.Foreground(lipgloss.Color("#FF8800")).Render("New Comment")
+	case ModalEdit, ModalConfirmDelete:
+		statusStyle := lipgloss.NewStyle().Bold(true)
+		if m.status == "open" {
+			statusStyle = statusStyle.Foreground(lipgloss.Color("#FF8800"))
+		} else {
+			statusStyle = statusStyle.Foreground(lipgloss.Color("#00CC66"))
+		}
+		title = fmt.Sprintf("Comment [%s] %s", m.commentID, statusStyle.Render(m.status))
+	}
 
 	// Source snippet
 	snippetStyle := lipgloss.NewStyle().
@@ -133,25 +121,34 @@ func (m CommentModal) View(isDark bool) string {
 	}
 	snippetBlock := snippetStyle.Render(strings.Join(snippetLines, "\n"))
 
-	// Separator
 	sep := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#555555")).
 		Render(strings.Repeat("─", innerWidth))
 
-	// Textarea
+	footerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+
+	if m.mode == ModalConfirmDelete {
+		warnStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF4444"))
+		prompt := warnStyle.Render("Delete this comment permanently?")
+		footer := footerStyle.Render("[y] Yes  [n/Esc] Cancel")
+		content := strings.Join([]string{title, "", snippetBlock, sep, "", prompt, "", footer}, "\n")
+		return renderModalBox(content, modalWidth, m.width, m.height, isDark)
+	}
+
 	taView := m.textarea.View()
 
-	// Footer
-	footerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#888888"))
-	footer := footerStyle.Render("[Enter] Submit  [Shift+Enter] Newline  [Esc] Cancel")
+	var footer string
+	switch m.mode {
+	case ModalCreate:
+		footer = footerStyle.Render("[Ctrl+S] Submit  [Enter] Newline  [Esc] Cancel")
+	case ModalEdit:
+		footer = footerStyle.Render("[Ctrl+S] Save  [Esc] Cancel")
+	}
 
 	content := strings.Join([]string{title, "", snippetBlock, sep, "", taView, "", footer}, "\n")
-
 	return renderModalBox(content, modalWidth, m.width, m.height, isDark)
 }
 
-// renderModalBox renders content in a centered bordered box.
 func renderModalBox(content string, modalWidth, totalWidth, totalHeight int, isDark bool) string {
 	borderColor := lipgloss.Color("#7D56F4")
 	if !isDark {

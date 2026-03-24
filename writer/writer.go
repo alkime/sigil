@@ -45,8 +45,7 @@ func WriteComment(doc *model.Document, sourceLine int, span int, commentText str
 	allComments := append(slices.Clone(doc.Comments), newComment)
 
 	// Append backmatter
-	lines = append(lines, "")
-	lines = append(lines, buildBackmatter(allComments)...)
+	lines = appendBackmatter(lines, allComments)
 
 	// Write to file
 	content := strings.Join(lines, "\n") + "\n"
@@ -55,6 +54,77 @@ func WriteComment(doc *model.Document, sourceLine int, span int, commentText str
 	}
 
 	// Re-parse to get a fresh document
+	return parser.Parse(doc.FilePath)
+}
+
+// UpdateComment updates an existing comment's text and/or status and writes back to disk.
+func UpdateComment(doc *model.Document, id string, newText string, newStatus string) (*model.Document, error) {
+	// Update the comment in the existing list
+	comments := slices.Clone(doc.Comments)
+	for i := range comments {
+		if comments[i].ID == id {
+			comments[i].Comment = newText
+			comments[i].Status = newStatus
+			break
+		}
+	}
+
+	return rewriteBackmatter(doc, comments)
+}
+
+// DeleteComment removes a comment's ref marker and backmatter entry, then writes back to disk.
+func DeleteComment(doc *model.Document, id string) (*model.Document, error) {
+	lines := slices.Clone(doc.RawLines)
+
+	// Remove the ref marker line for this comment
+	refMarkerRe := fmt.Sprintf("<!-- @review-ref %s -->", id)
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == refMarkerRe {
+			lines = slices.Delete(lines, i, i+1)
+			break
+		}
+	}
+
+	// Remove existing backmatter
+	bmStart, bmEnd := findBackmatter(lines)
+	if bmStart >= 0 {
+		lines = slices.Delete(lines, bmStart, bmEnd+1)
+	}
+
+	// Rebuild backmatter without the deleted comment
+	var remaining []model.ReviewComment
+	for _, c := range doc.Comments {
+		if c.ID != id {
+			remaining = append(remaining, c)
+		}
+	}
+
+	lines = appendBackmatter(lines, remaining)
+
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(doc.FilePath, []byte(content), 0644); err != nil {
+		return nil, fmt.Errorf("writing file: %w", err)
+	}
+
+	return parser.Parse(doc.FilePath)
+}
+
+// rewriteBackmatter replaces just the backmatter with updated comments.
+func rewriteBackmatter(doc *model.Document, comments []model.ReviewComment) (*model.Document, error) {
+	lines := slices.Clone(doc.RawLines)
+
+	bmStart, bmEnd := findBackmatter(lines)
+	if bmStart >= 0 {
+		lines = slices.Delete(lines, bmStart, bmEnd+1)
+	}
+
+	lines = appendBackmatter(lines, comments)
+
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(doc.FilePath, []byte(content), 0644); err != nil {
+		return nil, fmt.Errorf("writing file: %w", err)
+	}
+
 	return parser.Parse(doc.FilePath)
 }
 
@@ -101,6 +171,20 @@ func findBackmatter(lines []string) (int, int) {
 	}
 
 	return -1, -1
+}
+
+// appendBackmatter trims trailing blank lines from lines, then appends one blank separator and the backmatter.
+func appendBackmatter(lines []string, comments []model.ReviewComment) []string {
+	// Trim trailing blank lines
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(comments) == 0 {
+		return lines
+	}
+	lines = append(lines, "")
+	lines = append(lines, buildBackmatter(comments)...)
+	return lines
 }
 
 // buildBackmatter serializes all comments into the backmatter block lines.
