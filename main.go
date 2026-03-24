@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/alkime/sigil/model"
 	"github.com/alkime/sigil/parser"
+	"github.com/alkime/sigil/writer"
 )
 
 func main() {
@@ -21,7 +22,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := model.NewApp(doc)
+	app := model.NewApp(doc, writer.WriteComment)
 	p := tea.NewProgram(app)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

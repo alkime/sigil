@@ -9,7 +9,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
+
+// WriteFunc is the signature for the comment-writing callback injected from main.
+type WriteFunc func(doc *Document, sourceLine int, span int, comment string) (*Document, error)
 
 // AppState represents the current UI mode.
 type AppState int
@@ -18,6 +22,8 @@ const (
 	StateBrowse AppState = iota
 	StateInspect
 	StateHelp
+	StateSelect
+	StateComment
 )
 
 // navState holds navigation state shared via pointer so that gutter/style
@@ -26,36 +32,48 @@ type navState struct {
 	// rendered line index -> comment IDs covering that line
 	renderedToComments map[int][]string
 
-	// ordered list of rendered line indices that have comments (for n/N)
+	// ordered list of rendered line indices that have comments (for j/k in browse)
 	commentLineIndices []int
 
 	// focusedCommentIdx is the index into commentLineIndices (-1 = none)
 	focusedCommentIdx int
+
+	// renderedToSource maps rendered line index -> 0-based source line in RawLines
+	renderedToSource map[int]int
+
+	// contentBlocks are the navigable blocks for select mode
+	contentBlocks []ContentBlock
+
+	// selector state (active during StateSelect)
+	selector SelectorState
 }
 
 // AppModel is the top-level Bubbletea model.
 type AppModel struct {
-	doc       *Document
-	viewport  viewport.Model
-	statusbar StatusBarModel
-	modal     ModalModel
-	state     AppState
-	width     int
-	height    int
-	isDark    bool
-	nav       *navState
+	doc          *Document
+	viewport     viewport.Model
+	statusbar    StatusBarModel
+	modal        ModalModel
+	commentModal *CommentModal
+	state        AppState
+	width        int
+	height       int
+	isDark       bool
+	nav          *navState
+	writeFn      WriteFunc
 
 	// rendered content as a single string
 	renderedContent string
 }
 
 // NewApp creates a new AppModel from a parsed Document.
-func NewApp(doc *Document) AppModel {
+func NewApp(doc *Document, writeFn WriteFunc) AppModel {
 	m := AppModel{
-		doc:    doc,
-		state:  StateBrowse,
-		isDark: true,
-		nav:    &navState{focusedCommentIdx: -1},
+		doc:     doc,
+		state:   StateBrowse,
+		isDark:  true,
+		nav:     &navState{focusedCommentIdx: -1},
+		writeFn: writeFn,
 	}
 	return m
 }
@@ -83,17 +101,28 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInspect(msg)
 		case StateHelp:
 			return m.updateHelp(msg)
+		case StateSelect:
+			return m.updateSelect(msg)
+		case StateComment:
+			return m.updateComment(msg)
 		default:
 			return m.updateBrowse(msg)
 		}
 	}
 
-	// Pass other messages to viewport
-	if m.state == StateBrowse {
+	// Pass other messages based on state
+	switch m.state {
+	case StateBrowse:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, cmd
+	case StateComment:
+		// Pass non-key messages (like cursor blink) to comment modal
+		if m.commentModal != nil {
+			_, cmd := m.commentModal.Update(msg)
+			return m, cmd
+		}
 	}
 
 	return m, nil
@@ -128,12 +157,16 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.tryOpenInspect()
 		return m, nil
 
+	case "a":
+		m.enterSelectMode()
+		return m, nil
+
 	case "?":
 		m.state = StateHelp
 		return m, nil
 	}
 
-	// Let viewport handle j/k/d/u/pgup/pgdn etc.
+	// Let viewport handle d/u/pgup/pgdn etc.
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	m.statusbar.scrollPct = m.viewport.ScrollPercent()
@@ -159,6 +192,71 @@ func (m AppModel) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m AppModel) updateSelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down":
+		m.nav.selector.MoveDown()
+		m.viewport.SetYOffset(m.nav.selector.CursorRenderedLine())
+		return m, nil
+
+	case "k", "up":
+		m.nav.selector.MoveUp()
+		m.viewport.SetYOffset(m.nav.selector.CursorRenderedLine())
+		return m, nil
+
+	case "enter":
+		result := m.nav.selector.Confirm()
+		if result != nil {
+			m.openCommentModal(*result)
+			return m, m.commentModal.FocusCmd()
+		}
+		return m, nil
+
+	case "esc":
+		m.exitSelectMode()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m AppModel) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.commentModal == nil {
+		m.state = StateBrowse
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.commentModal = nil
+		m.exitSelectMode()
+		return m, nil
+
+	case "enter":
+		// Submit the comment
+		text := strings.TrimSpace(m.commentModal.Value())
+		if text == "" {
+			return m, nil
+		}
+		sel := m.commentModal.selection
+		newDoc, err := m.writeFn(m.doc, sel.StartSourceLine, sel.Span, text)
+		if err != nil {
+			// TODO: show error in status bar
+			m.commentModal = nil
+			m.exitSelectMode()
+			return m, nil
+		}
+		m.doc = newDoc
+		m.commentModal = nil
+		m.state = StateBrowse
+		m.initViewport()
+		return m, nil
+	}
+
+	// Pass to textarea for text input
+	_, cmd := m.commentModal.Update(msg)
+	return m, cmd
+}
+
 func (m AppModel) View() tea.View {
 	if m.width == 0 || m.height == 0 {
 		v := tea.NewView("Loading...")
@@ -172,6 +270,10 @@ func (m AppModel) View() tea.View {
 		content = m.modal.View(m.isDark)
 	case StateHelp:
 		content = m.renderHelp()
+	case StateComment:
+		if m.commentModal != nil {
+			content = m.commentModal.View(m.isDark)
+		}
 	default:
 		vpView := m.viewport.View()
 		sbView := m.statusbar.View(m.isDark)
@@ -192,6 +294,7 @@ func (m AppModel) renderHelp() string {
 		{"j / ↓", "Next comment"},
 		{"k / ↑", "Previous comment"},
 		{"Enter", "Inspect focused comment"},
+		{"a", "Annotate (select lines)"},
 		{"d", "Half-page down"},
 		{"u", "Half-page up"},
 		{"g", "Go to top"},
@@ -214,19 +317,44 @@ func (m AppModel) renderHelp() string {
 	content := strings.Join(lines, "\n")
 	_ = innerWidth
 
-	borderColor := lipgloss.Color("#7D56F4")
-	if !m.isDark {
-		borderColor = lipgloss.Color("#9B72CF")
+	return renderModalBox(content, modalWidth, m.width, m.height, m.isDark)
+}
+
+// enterSelectMode switches to block selection mode.
+func (m *AppModel) enterSelectMode() {
+	m.state = StateSelect
+	m.nav.selector = NewBlockSelector(m.nav.contentBlocks)
+
+	// Swap gutter and style for select mode
+	m.viewport.LeftGutterFunc = m.selectGutterFunc
+	m.viewport.StyleLineFunc = m.selectStyleFunc
+}
+
+// exitSelectMode returns to browse mode, restoring the original gutter.
+func (m *AppModel) exitSelectMode() {
+	m.state = StateBrowse
+	m.viewport.LeftGutterFunc = m.gutterFunc
+	m.viewport.StyleLineFunc = m.styleLineFunc
+}
+
+// openCommentModal transitions from select to comment creation.
+func (m *AppModel) openCommentModal(sel SelectionResult) {
+	// Build snippet from selected source lines
+	startLine := sel.StartSourceLine
+	endLine := sel.EndSourceLine + 1
+	if endLine > len(m.doc.RawLines) {
+		endLine = len(m.doc.RawLines)
 	}
+	lines := m.doc.RawLines[startLine:endLine]
+	numbered := make([]string, len(lines))
+	for i, l := range lines {
+		numbered[i] = fmt.Sprintf("%d: %s", startLine+i+1, l)
+	}
+	snippet := strings.Join(numbered, "\n")
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1, 2).
-		Width(modalWidth).
-		Render(content)
-
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	cm := newCommentModal(snippet, sel, m.width, m.height)
+	m.commentModal = &cm
+	m.state = StateComment
 }
 
 // initViewport renders the markdown and sets up the viewport with gutter and highlights.
@@ -237,11 +365,12 @@ func (m *AppModel) initViewport() {
 	rendered := m.renderMarkdown()
 	m.renderedContent = rendered
 
-	// Build line mapping and comment associations
+	// Build line mapping, comment associations, and content blocks
 	renderedLines := strings.Split(rendered, "\n")
 	m.buildRenderedCommentMap(renderedLines)
+	m.buildContentBlocks(renderedLines)
 
-	// Set up viewport — disable j/k/up/down since we use them for comment navigation
+	// Set up viewport — disable j/k/up/down since we use them for comment/select navigation
 	m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(vpHeight))
 	m.viewport.KeyMap.Up.SetEnabled(false)
 	m.viewport.KeyMap.Down.SetEnabled(false)
@@ -284,19 +413,26 @@ func (m *AppModel) renderMarkdown() string {
 	return strings.TrimRight(rendered, "\n")
 }
 
-// buildRenderedCommentMap builds the mapping from rendered line indices to comment IDs.
-// Uses a best-effort heuristic: content line i maps roughly to rendered line i,
-// adjusted by counting block boundaries.
+// buildRenderedCommentMap builds the mapping from rendered line indices to comment IDs,
+// and also builds the renderedToSource reverse mapping.
 func (m *AppModel) buildRenderedCommentMap(renderedLines []string) {
 	m.nav.renderedToComments = make(map[int][]string)
 	m.nav.commentLineIndices = nil
+	m.nav.renderedToSource = make(map[int]int)
+
+	// Build content-line to rendered-line mapping
+	contentToRendered := buildLineMapping(m.doc.ContentLines, renderedLines)
+
+	// Build reverse mapping: rendered -> content -> source
+	for ci, ri := range contentToRendered {
+		if ri < len(renderedLines) && ci < len(m.doc.ContentToSource) {
+			m.nav.renderedToSource[ri] = m.doc.ContentToSource[ci]
+		}
+	}
 
 	if len(m.doc.CommentedContentLines) == 0 {
 		return
 	}
-
-	// Build content-line to rendered-line mapping
-	contentToRendered := buildLineMapping(m.doc.ContentLines, renderedLines)
 
 	// Map commented content lines to rendered lines
 	for ci, ids := range m.doc.CommentedContentLines {
@@ -310,14 +446,12 @@ func (m *AppModel) buildRenderedCommentMap(renderedLines []string) {
 	}
 
 	// Build jump targets: one entry per distinct comment (first rendered line only).
-	// This is what n/N cycles through.
 	seen := make(map[string]bool)
 	type commentTarget struct {
 		id   string
 		line int
 	}
 	var targets []commentTarget
-	// Collect all rendered lines sorted, then pick first occurrence of each comment ID
 	allLines := make([]int, 0, len(m.nav.renderedToComments))
 	for ri := range m.nav.renderedToComments {
 		allLines = append(allLines, ri)
@@ -338,6 +472,40 @@ func (m *AppModel) buildRenderedCommentMap(renderedLines []string) {
 	}
 }
 
+// buildContentBlocks identifies navigable blocks in the rendered output
+// and maps each to its source line range via renderedToSource.
+func (m *AppModel) buildContentBlocks(renderedLines []string) {
+	m.nav.contentBlocks = nil
+	rBlocks := identifyBlocks(renderedLines)
+
+	for _, rb := range rBlocks {
+		// Find source line range for this rendered block
+		srcStart, srcEnd := -1, -1
+		for ri := rb.start; ri <= rb.end; ri++ {
+			if src, ok := m.nav.renderedToSource[ri]; ok {
+				if srcStart < 0 || src < srcStart {
+					srcStart = src
+				}
+				if src > srcEnd {
+					srcEnd = src
+				}
+			}
+		}
+		// Fall back if no source mapping found
+		if srcStart < 0 {
+			srcStart = rb.start
+			srcEnd = rb.end
+		}
+
+		m.nav.contentBlocks = append(m.nav.contentBlocks, ContentBlock{
+			RenderedStart: rb.start,
+			RenderedEnd:   rb.end,
+			SourceStart:   srcStart,
+			SourceEnd:     srcEnd,
+		})
+	}
+}
+
 // buildLineMapping maps content line indices to rendered line indices.
 // Heuristic: align by blank-line-delimited blocks.
 func buildLineMapping(contentLines []string, renderedLines []string) []int {
@@ -350,9 +518,7 @@ func buildLineMapping(contentLines []string, renderedLines []string) []int {
 	contentBlocks := identifyBlocks(contentLines)
 	renderedBlocks := identifyBlocks(renderedLines)
 
-	// Align blocks: for each content block, find the corresponding rendered block
 	for ci := range contentLines {
-		// Find which content block this line belongs to
 		cBlockIdx := -1
 		var cBlock block
 		lineInBlock := 0
@@ -366,7 +532,6 @@ func buildLineMapping(contentLines []string, renderedLines []string) []int {
 		}
 
 		if cBlockIdx < 0 || cBlockIdx >= len(renderedBlocks) {
-			// Fallback: proportional mapping
 			mapping[ci] = min(ci, len(renderedLines)-1)
 			continue
 		}
@@ -375,7 +540,6 @@ func buildLineMapping(contentLines []string, renderedLines []string) []int {
 		cBlockSize := cBlock.end - cBlock.start + 1
 		rBlockSize := rBlock.end - rBlock.start + 1
 
-		// Proportional position within the block
 		if cBlockSize > 0 {
 			ri := rBlock.start + (lineInBlock * rBlockSize / cBlockSize)
 			mapping[ci] = min(ri, len(renderedLines)-1)
@@ -397,7 +561,7 @@ func identifyBlocks(lines []string) []block {
 	var current block
 
 	for i, line := range lines {
-		isEmpty := strings.TrimSpace(line) == ""
+		isEmpty := strings.TrimSpace(ansi.Strip(line)) == ""
 		if isEmpty {
 			if inBlock {
 				current.end = i - 1
@@ -419,6 +583,7 @@ func identifyBlocks(lines []string) []block {
 	return blocks
 }
 
+// Browse mode gutter: shows comment markers
 func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 	if ctx.Soft || ctx.Index >= ctx.TotalLines {
 		return "  "
@@ -447,6 +612,43 @@ func (m *AppModel) styleLineFunc(lineIdx int) lipgloss.Style {
 	return lipgloss.NewStyle()
 }
 
+// Select mode gutter: shows block indicator
+func (m *AppModel) selectGutterFunc(ctx viewport.GutterContext) string {
+	if ctx.Index >= ctx.TotalLines {
+		return "  "
+	}
+	if ctx.Soft {
+		return "  "
+	}
+
+	isCursor := m.nav.selector.IsCursorBlock(ctx.Index)
+	inSel := m.nav.selector.InSelection(ctx.Index)
+
+	if isCursor {
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Bold(true)
+		return style.Render("▸ ")
+	}
+	if inSel {
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color("#BB8844"))
+		return style.Render("│ ")
+	}
+	return "  "
+}
+
+// Select mode line styling: highlights cursor block and selected range
+func (m *AppModel) selectStyleFunc(lineIdx int) lipgloss.Style {
+	isCursor := m.nav.selector.IsCursorBlock(lineIdx)
+	inSel := m.nav.selector.InSelection(lineIdx)
+
+	if isCursor {
+		return lipgloss.NewStyle().Background(lipgloss.Color("#2D4F7C"))
+	}
+	if inSel {
+		return lipgloss.NewStyle().Background(lipgloss.Color("#1E3550"))
+	}
+	return lipgloss.NewStyle()
+}
+
 // jumpToComment cycles to the next (dir=1) or previous (dir=-1) comment.
 func (m *AppModel) jumpToComment(dir int) {
 	if len(m.nav.commentLineIndices) == 0 {
@@ -462,7 +664,6 @@ func (m *AppModel) jumpToComment(dir int) {
 		}
 	}
 
-	// Scroll so the focused comment is visible
 	target := m.nav.commentLineIndices[m.nav.focusedCommentIdx]
 	m.viewport.SetYOffset(target)
 }
@@ -472,14 +673,12 @@ func (m *AppModel) tryOpenInspect() {
 	var ids []string
 	var ok bool
 
-	// Prefer the focused comment
 	if m.nav.focusedCommentIdx >= 0 && m.nav.focusedCommentIdx < len(m.nav.commentLineIndices) {
 		ri := m.nav.commentLineIndices[m.nav.focusedCommentIdx]
 		ids, ok = m.nav.renderedToComments[ri]
 	}
 
 	if !ok || len(ids) == 0 {
-		// Fall back: check lines around current scroll position
 		currentLine := m.viewport.YOffset()
 		for offset := 0; offset <= 5; offset++ {
 			if ids, ok = m.nav.renderedToComments[currentLine+offset]; ok && len(ids) > 0 {
@@ -496,15 +695,12 @@ func (m *AppModel) tryOpenInspect() {
 		return
 	}
 
-	// Build source snippet from the comment's ref marker
 	snippet := m.buildSnippet(comment, ids[0])
-
 	m.modal = newInspectModal(comment, snippet, m.width, m.height)
 	m.state = StateInspect
 }
 
 func (m *AppModel) buildSnippet(comment *ReviewComment, id string) string {
-	// Find the ref marker for this comment
 	for _, marker := range m.doc.RefMarkers {
 		if marker.ID != id {
 			continue
@@ -527,5 +723,4 @@ func (m *AppModel) buildSnippet(comment *ReviewComment, id string) string {
 	return ""
 }
 
-// Ensure AppModel satisfies tea.Model at compile time.
 var _ tea.Model = AppModel{}
