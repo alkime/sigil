@@ -9,25 +9,23 @@ type ContentBlock struct {
 	SourceEnd     int // last source line (0-based, inclusive)
 }
 
-// SelectorState tracks block-level selection in select mode.
-type SelectorState struct {
-	Blocks       []ContentBlock // all navigable blocks
-	CursorBlock  int            // index into Blocks
-	StartBlock   int            // first selected block (-1 if not yet set)
-}
-
-// SelectionResult is returned when the user completes a selection.
+// SelectionResult is returned when the user acts on a block.
 type SelectionResult struct {
 	StartSourceLine int // 0-based index in RawLines
 	EndSourceLine   int // 0-based, inclusive
 	Span            int // number of source lines
 }
 
+// SelectorState tracks block-level cursor position.
+type SelectorState struct {
+	Blocks      []ContentBlock
+	CursorBlock int // index into Blocks
+}
+
 func NewBlockSelector(blocks []ContentBlock) SelectorState {
 	return SelectorState{
 		Blocks:      blocks,
 		CursorBlock: 0,
-		StartBlock:  -1,
 	}
 }
 
@@ -51,62 +49,55 @@ func (s *SelectorState) CursorRenderedLine() int {
 	return s.Blocks[s.CursorBlock].RenderedStart
 }
 
-// Confirm handles Enter press. Returns a SelectionResult if selection is complete, nil otherwise.
-func (s *SelectorState) Confirm() *SelectionResult {
-	if len(s.Blocks) == 0 {
-		return nil
-	}
-
-	if s.StartBlock < 0 {
-		// First Enter: set start block
-		s.StartBlock = s.CursorBlock
-		return nil
-	}
-
-	// Second Enter: complete selection across block range
-	lo, hi := s.StartBlock, s.CursorBlock
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-
-	startSource := s.Blocks[lo].SourceStart
-	endSource := s.Blocks[hi].SourceEnd
-
-	return &SelectionResult{
-		StartSourceLine: startSource,
-		EndSourceLine:   endSource,
-		Span:            endSource - startSource + 1,
-	}
-}
-
-// InSelection returns true if the given rendered line is within the current selection range.
-func (s *SelectorState) InSelection(renderedLine int) bool {
-	if len(s.Blocks) == 0 {
-		return false
-	}
-
-	lo, hi := s.CursorBlock, s.CursorBlock
-	if s.StartBlock >= 0 {
-		lo, hi = s.StartBlock, s.CursorBlock
-		if lo > hi {
-			lo, hi = hi, lo
-		}
-	}
-
-	for i := lo; i <= hi && i < len(s.Blocks); i++ {
-		b := s.Blocks[i]
-		if renderedLine >= b.RenderedStart && renderedLine <= b.RenderedEnd {
-			return true
-		}
-	}
-	return false
-}
-
-// IsCursorBlock returns true if the given rendered line is in the currently focused block.
-func (s *SelectorState) IsCursorBlock(renderedLine int) bool {
+// CurrentBlock returns the currently focused block, or nil if none.
+func (s *SelectorState) CurrentBlock() *ContentBlock {
 	if s.CursorBlock < 0 || s.CursorBlock >= len(s.Blocks) {
+		return nil
+	}
+	return &s.Blocks[s.CursorBlock]
+}
+
+// Result returns the source range of the currently focused block.
+func (s *SelectorState) Result() *SelectionResult {
+	b := s.CurrentBlock()
+	if b == nil {
+		return nil
+	}
+	return &SelectionResult{
+		StartSourceLine: b.SourceStart,
+		EndSourceLine:   b.SourceEnd,
+		Span:            b.SourceEnd - b.SourceStart + 1,
+	}
+}
+
+// IsCursorBlock returns true if the given rendered line is in the focused block.
+func (s *SelectorState) IsCursorBlock(renderedLine int) bool {
+	b := s.CurrentBlock()
+	if b == nil {
 		return false
 	}
-	b := s.Blocks[s.CursorBlock]
 	return renderedLine >= b.RenderedStart && renderedLine <= b.RenderedEnd
+}
+
+// JumpToNextCommented moves to the next block that has a comment.
+// commentedBlocks maps block index -> true if the block has a comment.
+func (s *SelectorState) JumpToNextCommented(commentedBlocks map[int]bool) {
+	for i := 1; i < len(s.Blocks); i++ {
+		idx := (s.CursorBlock + i) % len(s.Blocks)
+		if commentedBlocks[idx] {
+			s.CursorBlock = idx
+			return
+		}
+	}
+}
+
+// JumpToPrevCommented moves to the previous block that has a comment.
+func (s *SelectorState) JumpToPrevCommented(commentedBlocks map[int]bool) {
+	for i := 1; i < len(s.Blocks); i++ {
+		idx := (s.CursorBlock - i + len(s.Blocks)) % len(s.Blocks)
+		if commentedBlocks[idx] {
+			s.CursorBlock = idx
+			return
+		}
+	}
 }
