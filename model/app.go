@@ -558,7 +558,8 @@ func (m *AppModel) buildRenderedCommentMap(renderedLines []string) {
 
 // buildContentBlocks identifies navigable blocks in the rendered output.
 func (m *AppModel) buildContentBlocks(renderedLines []string) {
-	m.nav.contentBlocks = nil
+	// Build individual blocks first
+	var rawBlocks []ContentBlock
 	rBlocks := identifyBlocks(renderedLines)
 
 	for _, rb := range rBlocks {
@@ -578,13 +579,47 @@ func (m *AppModel) buildContentBlocks(renderedLines []string) {
 			srcEnd = rb.end
 		}
 
-		m.nav.contentBlocks = append(m.nav.contentBlocks, ContentBlock{
+		rawBlocks = append(rawBlocks, ContentBlock{
 			RenderedStart: rb.start,
 			RenderedEnd:   rb.end,
 			SourceStart:   srcStart,
 			SourceEnd:     srcEnd,
 		})
 	}
+
+	// Merge consecutive blocks that share the same comment ID into one super-block.
+	m.nav.contentBlocks = nil
+	for i := 0; i < len(rawBlocks); i++ {
+		b := rawBlocks[i]
+		commentID := m.blockCommentID(b)
+		if commentID == "" {
+			m.nav.contentBlocks = append(m.nav.contentBlocks, b)
+			continue
+		}
+		// Merge subsequent blocks with the same comment ID
+		merged := false
+		for i+1 < len(rawBlocks) && m.blockCommentID(rawBlocks[i+1]) == commentID {
+			i++
+			b.RenderedEnd = rawBlocks[i].RenderedEnd
+			b.SourceEnd = rawBlocks[i].SourceEnd
+			merged = true
+		}
+		// Only extend to cover trailing blank lines if we actually merged multiple blocks
+		if merged && i+1 < len(rawBlocks) {
+			b.RenderedEnd = rawBlocks[i+1].RenderedStart - 1
+		}
+		m.nav.contentBlocks = append(m.nav.contentBlocks, b)
+	}
+}
+
+// blockCommentID returns the comment ID for a block, or "" if uncommented.
+func (m *AppModel) blockCommentID(b ContentBlock) string {
+	for ri := b.RenderedStart; ri <= b.RenderedEnd; ri++ {
+		if ids, ok := m.nav.renderedToComments[ri]; ok && len(ids) > 0 {
+			return ids[0]
+		}
+	}
+	return ""
 }
 
 // buildCommentedBlocksMap marks which blocks have comments.
@@ -600,37 +635,90 @@ func (m *AppModel) buildCommentedBlocksMap() {
 	}
 }
 
-// Unified gutter: ▸ on focused block, ● on commented blocks, space otherwise.
+// Unified gutter function.
+// Focused + commented: ▶/│/▶ bracket in orange (no blue bar)
+// Focused + uncommented: blue ▎ bar
+// Unfocused + commented: ● on first line
+// Unfocused + uncommented: blank
 func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
+	isCursor := m.nav.selector.IsCursorBlock(ctx.Index)
+	commentPos := m.commentLinePosition(ctx.Index)
+
+	orangeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800"))
+	orangeBold := orangeStyle.Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+	blueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5599FF"))
+
 	if ctx.Soft || ctx.Index >= ctx.TotalLines {
-		if m.nav.selector.IsCursorBlock(ctx.Index) {
-			barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5599FF"))
-			return "  " + barStyle.Render("▎")
+		if isCursor && commentPos != "" {
+			return orangeStyle.Render("│") + "  "
+		}
+		if isCursor {
+			return "  " + blueStyle.Render("▎")
 		}
 		return "   "
 	}
 
-	isCursor := m.nav.selector.IsCursorBlock(ctx.Index)
-
-	// Show comment marker on the first line of the first block that has this comment.
-	marker := "  "
-	if bi, isFirstLine := m.firstLineOfCommentedBlock(ctx.Index); bi >= 0 && isFirstLine {
-		ids := m.nav.renderedToComments[ctx.Index]
-		if c, ok := m.doc.CommentByID[ids[0]]; ok && c.Status == "resolved" {
-			marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render("✓ ")
-		} else if isCursor {
-			marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Bold(true).Render("▶ ")
-		} else {
-			marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Render("● ")
+	// Focused commented block: orange bracket
+	if isCursor && commentPos != "" {
+		switch commentPos {
+		case "only": // single-line comment
+			return orangeBold.Render("▶") + "  "
+		case "first":
+			return orangeBold.Render("▶") + "  "
+		case "middle":
+			return orangeStyle.Render("│") + "  "
+		case "last":
+			return orangeBold.Render("▶") + "  "
 		}
 	}
 
-	if isCursor {
-		barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5599FF"))
-		return marker + barStyle.Render("▎")
+	// Unfocused commented block: ● on first line, │ on middle, nothing on last
+	if commentPos != "" && !isCursor {
+		switch commentPos {
+		case "only":
+			return orangeStyle.Render("●") + "  "
+		case "first":
+			return orangeStyle.Render("●") + "  "
+		case "middle":
+			return dimStyle.Render("│") + "  "
+		case "last":
+			return dimStyle.Render("╵") + "  "
+		}
 	}
 
-	return marker + " "
+	// Focused uncommented block: blue bar
+	if isCursor {
+		return "  " + blueStyle.Render("▎")
+	}
+
+	return "   "
+}
+
+// commentLinePosition returns where a rendered line sits in its commented block.
+// Returns "first", "middle", "last", "only", or "" if not in a commented block.
+func (m *AppModel) commentLinePosition(renderedLine int) string {
+	// Find the commented block containing this line
+	for bi, b := range m.nav.contentBlocks {
+		if !m.nav.commentedBlocks[bi] {
+			continue
+		}
+		if renderedLine < b.RenderedStart || renderedLine > b.RenderedEnd {
+			continue
+		}
+		// This line is in a commented block
+		if b.RenderedStart == b.RenderedEnd {
+			return "only"
+		}
+		if renderedLine == b.RenderedStart {
+			return "first"
+		}
+		if renderedLine == b.RenderedEnd {
+			return "last"
+		}
+		return "middle"
+	}
+	return ""
 }
 
 // firstLineOfCommentedBlock checks if renderedLine is the first line of the first
