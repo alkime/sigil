@@ -445,12 +445,12 @@ func TestReplyComment_NotFound(t *testing.T) {
 	}
 }
 
-// --- InstallSkill tests ---
+// --- GenerateSkill tests ---
 
-func TestInstallSkill(t *testing.T) {
+func TestGenerateSkill(t *testing.T) {
 	var buf bytes.Buffer
 	ctx := &cli.CLIContext{Out: &buf}
-	cmd := &cli.InstallSkillCmd{}
+	cmd := &cli.GenerateSkillCmd{}
 	if err := cmd.Run(ctx); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestInstallSkill(t *testing.T) {
 		"get-comments",
 		"resolve-comments",
 		"reply-comment",
-		"install-skill",
+		"generate-skill",
 		"@review-backmatter",
 	} {
 		if !strings.Contains(out, want) {

@@ -9,6 +9,20 @@ const skillContent = `# Sigil — Markdown Review Tool
 Sigil is a terminal-based Markdown review tool. It lets humans and LLMs
 collaborate through inline review comments embedded directly in Markdown files.
 
+## Prerequisites
+
+Before using Sigil commands, verify it is installed and accessible:
+
+` + "```" + `bash
+sigil --help
+` + "```" + `
+
+If the command is not found, install it with:
+
+` + "```" + `bash
+go install github.com/alkime/sigil@latest
+` + "```" + `
+
 ## Workflow
 
 1. A human opens a Markdown file in Sigil's TUI and adds line-level review
@@ -49,11 +63,10 @@ sigil unresolve-comments file.md 1
 sigil reply-comment file.md 1 "Fixed the typo, see updated text."
 ` + "```" + `
 
-### Install this skill file
+### Generate this skill file
 
 ` + "```" + `bash
-# Pipe the skill content into a file for LLM agent use
-sigil install-skill > .claude/skills/sigil/SKILL.md
+sigil generate-skill > SKILL.md
 ` + "```" + `
 
 ## Typical LLM Workflow
@@ -77,7 +90,7 @@ Comments are stored as HTML comment blocks within the Markdown file:
 `
 
 // Run prints the skill content to stdout.
-func (c *InstallSkillCmd) Run(ctx *CLIContext) error {
+func (c *GenerateSkillCmd) Run(ctx *CLIContext) error {
 	fmt.Fprint(ctx.Out, skillContent)
 	return nil
 }

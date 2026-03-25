@@ -9,10 +9,10 @@ import (
 // CLI is the top-level Kong command structure for Sigil.
 type CLI struct {
 	GetComments       GetCommentsCmd       `cmd:"" name:"get-comments" help:"Print comments from a Markdown file as JSON."`
-	ResolveComments   ResolveCommentsCmd   `cmd:"" name:"resolve-comments" help:"Mark comments as resolved."`
-	UnresolveComments UnresolveCommentsCmd `cmd:"" name:"unresolve-comments" help:"Mark comments as unresolved."`
+	ResolveComments   ResolveCommentsCmd   `cmd:"" name:"resolve-comments" aliases:"resolve-comment" help:"Mark comments as resolved."`
+	UnresolveComments UnresolveCommentsCmd `cmd:"" name:"unresolve-comments" aliases:"unresolve-comment" help:"Mark comments as unresolved."`
 	ReplyComment      ReplyCommentCmd      `cmd:"" name:"reply-comment" help:"Add a reply to a comment."`
-	InstallSkill      InstallSkillCmd      `cmd:"" name:"install-skill" help:"Install a Sigil skill file."`
+	GenerateSkill     GenerateSkillCmd     `cmd:"" name:"generate-skill" help:"Print LLM skill doc to stdout (e.g. sigil generate-skill > SKILL.md)."`
 	TUI               TUICmd               `cmd:"" default:"withargs" hidden:""`
 }
 
@@ -62,5 +62,5 @@ type ReplyCommentCmd struct {
 	ReplyText string `arg:"" name:"reply" help:"Reply text."`
 }
 
-// InstallSkillCmd prints a Sigil skill document to stdout.
-type InstallSkillCmd struct{}
+// GenerateSkillCmd prints a Sigil skill document to stdout.
+type GenerateSkillCmd struct{}
