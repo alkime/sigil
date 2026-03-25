@@ -130,25 +130,25 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "j", "down":
 		m.nav.selector.MoveDown()
-		m.viewport.SetYOffset(m.nav.selector.CursorRenderedLine())
+		m.ensureBlockVisible()
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, nil
 
 	case "k", "up":
 		m.nav.selector.MoveUp()
-		m.viewport.SetYOffset(m.nav.selector.CursorRenderedLine())
+		m.ensureBlockVisible()
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, nil
 
 	case "n":
 		m.nav.selector.JumpToNextCommented(m.nav.commentedBlocks)
-		m.viewport.SetYOffset(m.nav.selector.CursorRenderedLine())
+		m.ensureBlockVisible()
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, nil
 
 	case "N":
 		m.nav.selector.JumpToPrevCommented(m.nav.commentedBlocks)
-		m.viewport.SetYOffset(m.nav.selector.CursorRenderedLine())
+		m.ensureBlockVisible()
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, nil
 
@@ -165,7 +165,19 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.nav.commentedBlocks[m.nav.selector.CursorBlock] {
 			return m.handleDelete()
 		}
-		// Fall through to viewport (half-page down)
+		return m, nil
+
+	case "J", "shift+down":
+		m.viewport.HalfPageDown()
+		m.snapCursorToViewport()
+		m.statusbar.scrollPct = m.viewport.ScrollPercent()
+		return m, nil
+
+	case "K", "shift+up":
+		m.viewport.HalfPageUp()
+		m.snapCursorToViewport()
+		m.statusbar.scrollPct = m.viewport.ScrollPercent()
+		return m, nil
 
 	case "g":
 		m.viewport.GotoTop()
@@ -189,6 +201,7 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Let viewport handle d/u/pgup/pgdn etc.
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
+	m.snapCursorToViewport()
 	m.statusbar.scrollPct = m.viewport.ScrollPercent()
 	return m, cmd
 }
@@ -384,7 +397,8 @@ func (m AppModel) renderHelp() string {
 		{"n / N", "Next / prev comment"},
 		{"Enter", "Edit or add comment"},
 		{"r", "Resolve / reopen"},
-		{"d", "Delete (on comment) / ½ page down"},
+		{"d", "Delete comment"},
+		{"Shift+j/k", "Half-page scroll"},
 		{"u", "Half-page up"},
 		{"g", "Go to top"},
 		{"G", "Go to bottom"},
@@ -465,6 +479,8 @@ func (m *AppModel) initViewport() {
 	m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(vpHeight))
 	m.viewport.KeyMap.Up.SetEnabled(false)
 	m.viewport.KeyMap.Down.SetEnabled(false)
+	m.viewport.KeyMap.HalfPageDown.SetEnabled(false)
+	m.viewport.KeyMap.HalfPageUp.SetEnabled(false)
 	m.viewport.SetContent(rendered)
 
 	m.viewport.LeftGutterFunc = m.gutterFunc
@@ -612,6 +628,48 @@ func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 
 func (m *AppModel) styleLineFunc(_ int) lipgloss.Style {
 	return lipgloss.NewStyle()
+}
+
+// snapCursorToViewport moves the block cursor to the nearest visible block after a viewport scroll.
+func (m *AppModel) snapCursorToViewport() {
+	vpTop := m.viewport.YOffset()
+	vpBottom := vpTop + m.viewport.Height() - 1
+
+	// If current block is still visible, keep it
+	b := m.nav.selector.CurrentBlock()
+	if b != nil && b.RenderedEnd >= vpTop && b.RenderedStart <= vpBottom {
+		return
+	}
+
+	// Find the first block that's visible
+	for i, block := range m.nav.selector.Blocks {
+		if block.RenderedEnd >= vpTop && block.RenderedStart <= vpBottom {
+			m.nav.selector.CursorBlock = i
+			return
+		}
+	}
+}
+
+// ensureBlockVisible scrolls the viewport only if the focused block is near the edge.
+func (m *AppModel) ensureBlockVisible() {
+	b := m.nav.selector.CurrentBlock()
+	if b == nil {
+		return
+	}
+
+	margin := 3 // lines of context to keep visible above/below
+	vpTop := m.viewport.YOffset()
+	vpBottom := vpTop + m.viewport.Height() - 1
+
+	// If block start is above the viewport (with margin), scroll up
+	if b.RenderedStart < vpTop+margin {
+		m.viewport.SetYOffset(max(0, b.RenderedStart-margin))
+	}
+
+	// If block end is below the viewport (with margin), scroll down
+	if b.RenderedEnd > vpBottom-margin {
+		m.viewport.SetYOffset(b.RenderedEnd - m.viewport.Height() + 1 + margin)
+	}
 }
 
 // focusedComment returns the comment on the currently focused block, or nil.
