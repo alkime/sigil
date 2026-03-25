@@ -38,10 +38,10 @@ func NormalizeID(raw string) string {
 
 // GetCommentsCmd prints review comments from a file.
 type GetCommentsCmd struct {
-	File string `arg:"" help:"Markdown file to read."`
+	File       string `arg:"" help:"Markdown file to read."`
+	Open       bool   `help:"Show only open comments." xor:"status"`
+	Resolved   bool   `help:"Show only resolved comments." xor:"status"`
 }
-
-func (c *GetCommentsCmd) Run(_ *CLIContext) error { return nil }
 
 // ResolveCommentsCmd marks comments as resolved.
 type ResolveCommentsCmd struct {
@@ -49,28 +49,18 @@ type ResolveCommentsCmd struct {
 	IDs  []string `arg:"" help:"Comment IDs to resolve."`
 }
 
-func (c *ResolveCommentsCmd) Run(_ *CLIContext) error { return nil }
-
 // UnresolveCommentsCmd marks comments as unresolved.
 type UnresolveCommentsCmd struct {
 	File string   `arg:"" help:"Markdown file to update."`
 	IDs  []string `arg:"" help:"Comment IDs to unresolve."`
 }
 
-func (c *UnresolveCommentsCmd) Run(_ *CLIContext) error { return nil }
-
 // ReplyCommentCmd adds a reply to a comment.
 type ReplyCommentCmd struct {
-	File  string `arg:"" help:"Markdown file to update."`
-	ID    string `arg:"" help:"Comment ID to reply to."`
-	Reply string `arg:"" help:"Reply text."`
+	File      string `arg:"" help:"Markdown file to update."`
+	ID        string `arg:"" help:"Comment ID to reply to."`
+	ReplyText string `arg:"" name:"reply" help:"Reply text."`
 }
 
-func (c *ReplyCommentCmd) Run(_ *CLIContext) error { return nil }
-
-// InstallSkillCmd installs a Sigil skill file.
-type InstallSkillCmd struct {
-	Path string `arg:"" help:"Path to skill file."`
-}
-
-func (c *InstallSkillCmd) Run(_ *CLIContext) error { return nil }
+// InstallSkillCmd prints a Sigil skill document to stdout.
+type InstallSkillCmd struct{}
