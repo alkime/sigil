@@ -152,6 +152,17 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, nil
 
+	case "x":
+		m.nav.selector.ToggleSelect()
+		return m, nil
+
+	case "esc":
+		if m.nav.selector.Selecting {
+			m.nav.selector.CancelSelect()
+			return m, nil
+		}
+		return m, nil
+
 	case "enter":
 		return m.handleEnter()
 
@@ -250,6 +261,17 @@ func (m AppModel) handleDelete() (tea.Model, tea.Cmd) {
 
 // handleEnter: context-sensitive — edit existing comment or create new one.
 func (m AppModel) handleEnter() (tea.Model, tea.Cmd) {
+	// If multi-selecting, always create a new comment for the range
+	if m.nav.selector.Selecting {
+		result := m.nav.selector.Result()
+		if result != nil {
+			m.nav.selector.CancelSelect()
+			m.openCommentModal(*result)
+			return m, m.commentModal.FocusCmd()
+		}
+		return m, nil
+	}
+
 	if m.nav.commentedBlocks[m.nav.selector.CursorBlock] {
 		m.openInspectForBlock()
 		return m, nil
@@ -395,6 +417,7 @@ func (m AppModel) renderHelp() string {
 		{"j / ↓", "Next block"},
 		{"k / ↑", "Previous block"},
 		{"n / N", "Next / prev comment"},
+		{"x", "Select block range"},
 		{"Enter", "Edit or add comment"},
 		{"r", "Resolve / reopen"},
 		{"d", "Delete comment"},
@@ -589,24 +612,16 @@ func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 
 	isCursor := m.nav.selector.IsCursorBlock(ctx.Index)
 
-	// Check if this line is the first line of a commented block
+	// Show comment marker on the first line of the first block that has this comment.
 	marker := "  "
-	if ids, ok := m.nav.renderedToComments[ctx.Index]; ok && len(ids) > 0 {
-		// Only show marker on the first rendered line that has this comment
-		isFirst := true
-		if ctx.Index > 0 {
-			if prevIDs, ok := m.nav.renderedToComments[ctx.Index-1]; ok && len(prevIDs) > 0 && prevIDs[0] == ids[0] {
-				isFirst = false
-			}
-		}
-		if isFirst {
-			if c, ok := m.doc.CommentByID[ids[0]]; ok && c.Status == "resolved" {
-				marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render("✓ ")
-			} else if isCursor {
-				marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Bold(true).Render("▶ ")
-			} else {
-				marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Render("● ")
-			}
+	if bi, isFirstLine := m.firstLineOfCommentedBlock(ctx.Index); bi >= 0 && isFirstLine {
+		ids := m.nav.renderedToComments[ctx.Index]
+		if c, ok := m.doc.CommentByID[ids[0]]; ok && c.Status == "resolved" {
+			marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render("✓ ")
+		} else if isCursor {
+			marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Bold(true).Render("▶ ")
+		} else {
+			marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Render("● ")
 		}
 	}
 
@@ -616,6 +631,49 @@ func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 	}
 
 	return marker + " "
+}
+
+// firstLineOfCommentedBlock checks if renderedLine is the first line of the first
+// commented block for its comment ID. Returns (blockIndex, isFirstLine).
+// blockIndex is -1 if the line isn't in a commented block or isn't a content line.
+func (m *AppModel) firstLineOfCommentedBlock(renderedLine int) (int, bool) {
+	ids, ok := m.nav.renderedToComments[renderedLine]
+	if !ok || len(ids) == 0 {
+		return -1, false
+	}
+	if !m.isInContentBlock(renderedLine) {
+		return -1, false
+	}
+
+	commentID := ids[0]
+
+	// Find the first block that has this comment
+	for bi, b := range m.nav.contentBlocks {
+		if !m.nav.commentedBlocks[bi] {
+			continue
+		}
+		for ri := b.RenderedStart; ri <= b.RenderedEnd; ri++ {
+			if blockIDs, ok := m.nav.renderedToComments[ri]; ok && len(blockIDs) > 0 && blockIDs[0] == commentID {
+				// This is the first block with this comment.
+				// Return whether renderedLine is the first line of this block.
+				return bi, renderedLine == b.RenderedStart
+			}
+		}
+	}
+	return -1, false
+}
+
+// isInContentBlock returns true if the rendered line is inside any content block.
+func (m *AppModel) isInContentBlock(renderedLine int) bool {
+	for _, b := range m.nav.contentBlocks {
+		if renderedLine >= b.RenderedStart && renderedLine <= b.RenderedEnd {
+			return true
+		}
+		if b.RenderedStart > renderedLine {
+			break // blocks are sorted
+		}
+	}
+	return false
 }
 
 func (m *AppModel) styleLineFunc(_ int) lipgloss.Style {

@@ -4,6 +4,7 @@
 
 This document describes the architecture for the new payment processing system. It handles credit card transactions, refunds, and subscription billing for all customer tiers.
 
+<!-- @review-ref 0002 -->
 ## Requirements
 
 - Process up to 10,000 transactions per minute at peak load
@@ -151,6 +152,12 @@ Phase 2 (Week 3-4):
   offset: 1
   span: 1
   comment: "Errors!"
+  status: open
+
+"0002":
+  offset: 1
+  span: 26
+  comment: "bad ass"
   status: open
 
 -->
