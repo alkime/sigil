@@ -1,53 +1,66 @@
 package model
 
 import (
-	"fmt"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 )
 
-// StatusBarModel renders a bottom status bar with file info and comment counts.
+// StatusBarModel renders the bottom status area: keybinding hints + file info.
 type StatusBarModel struct {
-	filename    string
-	openCount   int
-	totalCount  int
-	scrollPct   float64
-	width       int
+	filename       string
+	scrollPct      float64
+	width          int
+	onCommentBlock bool
 }
 
-func newStatusBar(filename string, comments []ReviewComment, width int) StatusBarModel {
-	open := 0
-	for _, c := range comments {
-		if c.Status == "open" {
-			open++
-		}
-	}
+func newStatusBar(filename string, width int) StatusBarModel {
 	return StatusBarModel{
-		filename:   filename,
-		openCount:  open,
-		totalCount: len(comments),
-		width:      width,
+		filename: filename,
+		width:    width,
 	}
+}
+
+// ContextHintView renders the contextual hint line.
+// Always returns a string (blank when no comment block focused) to keep layout stable.
+func (m StatusBarModel) ContextHintView() string {
+	if !m.onCommentBlock {
+		return ""
+	}
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#888888"))
+
+	hints := hintStyle.Render("r: resolve/reopen   d: delete")
+	pad := strings.Repeat(" ", max(0, m.width-lipgloss.Width(hints)))
+
+	return pad + hints
 }
 
 func (m StatusBarModel) View(isDark bool) string {
 	bg := lipgloss.Color("#7D56F4")
 	fg := lipgloss.Color("#FFFFFF")
+	dimFg := lipgloss.Color("#C4B5E3")
 	if !isDark {
 		bg = lipgloss.Color("#D7C4FF")
 		fg = lipgloss.Color("#1A1A2E")
+		dimFg = lipgloss.Color("#6B5B8A")
 	}
 
-	style := lipgloss.NewStyle().
+	infoStyle := lipgloss.NewStyle().
 		Background(bg).
 		Foreground(fg).
 		Padding(0, 1)
 
-	left := style.Render(m.filename)
-	middle := style.Render(fmt.Sprintf("%d/%d comments open", m.openCount, m.totalCount))
-	right := style.Render(fmt.Sprintf("%3.0f%%", m.scrollPct*100))
+	hintStyle := lipgloss.NewStyle().
+		Background(bg).
+		Foreground(dimFg).
+		Padding(0, 1)
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(middle) - lipgloss.Width(right)
+	left := infoStyle.Render(m.filename)
+	hints := hintStyle.Render("j/k: blocks   n/N: comments   Enter: edit   ?: help")
+
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(hints)
 	if gap < 0 {
 		gap = 0
 	}
@@ -57,5 +70,5 @@ func (m StatusBarModel) View(isDark bool) string {
 		Width(gap).
 		Render("")
 
-	return left + pad + middle + pad + right
+	return left + pad + hints
 }

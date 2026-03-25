@@ -22,7 +22,7 @@ Standard Docker-based deployment to fly.io.
 "0001":
   offset: 1
   span: 4
-  comment: "This undersells the OAuth complexity. Expand with redirect flow details.\n\nayup."
+  comment: "This undersells the OAuth complexity. Expand with redirect flow details."
   status: open
 
 "0002":

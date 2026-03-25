@@ -361,9 +361,11 @@ func (m AppModel) View() tea.View {
 	case StateHelp:
 		content = m.renderHelp()
 	default:
+		m.statusbar.onCommentBlock = m.nav.commentedBlocks[m.nav.selector.CursorBlock]
 		vpView := m.viewport.View()
+		contextHint := m.statusbar.ContextHintView()
 		sbView := m.statusbar.View(m.isDark)
-		content = vpView + "\n" + sbView
+		content = vpView + "\n" + contextHint + "\n" + sbView
 	}
 
 	v := tea.NewView(content)
@@ -447,7 +449,7 @@ func (m *AppModel) openInspectForBlock() {
 
 // initViewport renders the markdown and sets up the viewport.
 func (m *AppModel) initViewport() {
-	vpHeight := m.height - 1
+	vpHeight := m.height - 2 // status bar + context hint line
 
 	rendered := m.renderMarkdown()
 	m.renderedContent = rendered
@@ -468,7 +470,7 @@ func (m *AppModel) initViewport() {
 	m.viewport.LeftGutterFunc = m.gutterFunc
 	m.viewport.StyleLineFunc = m.styleLineFunc
 
-	m.statusbar = newStatusBar(m.doc.FilePath, m.doc.Comments, m.width)
+	m.statusbar = newStatusBar(m.doc.FilePath, m.width)
 	m.statusbar.scrollPct = m.viewport.ScrollPercent()
 }
 
@@ -570,34 +572,45 @@ func (m *AppModel) buildCommentedBlocksMap() {
 // Unified gutter: ▸ on focused block, ● on commented blocks, space otherwise.
 func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 	if ctx.Soft || ctx.Index >= ctx.TotalLines {
-		return "  "
+		if m.nav.selector.IsCursorBlock(ctx.Index) {
+			barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5599FF"))
+			return "  " + barStyle.Render("▎")
+		}
+		return "   "
 	}
 
 	isCursor := m.nav.selector.IsCursorBlock(ctx.Index)
-	if isCursor {
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Bold(true)
-		return style.Render("▸ ")
-	}
 
-	// Check if this line has a comment
+	// Check if this line is the first line of a commented block
+	marker := "  "
 	if ids, ok := m.nav.renderedToComments[ctx.Index]; ok && len(ids) > 0 {
-		// Check if the comment is resolved
-		if c, ok := m.doc.CommentByID[ids[0]]; ok && c.Status == "resolved" {
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
-			return style.Render("✓ ")
+		// Only show marker on the first rendered line that has this comment
+		isFirst := true
+		if ctx.Index > 0 {
+			if prevIDs, ok := m.nav.renderedToComments[ctx.Index-1]; ok && len(prevIDs) > 0 && prevIDs[0] == ids[0] {
+				isFirst = false
+			}
 		}
-		markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800"))
-		return markerStyle.Render("● ")
+		if isFirst {
+			if c, ok := m.doc.CommentByID[ids[0]]; ok && c.Status == "resolved" {
+				marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render("✓ ")
+			} else if isCursor {
+				marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Bold(true).Render("▶ ")
+			} else {
+				marker = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800")).Render("● ")
+			}
+		}
 	}
 
-	return "  "
+	if isCursor {
+		barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5599FF"))
+		return marker + barStyle.Render("▎")
+	}
+
+	return marker + " "
 }
 
-// Unified style: highlight focused block.
-func (m *AppModel) styleLineFunc(lineIdx int) lipgloss.Style {
-	if m.nav.selector.IsCursorBlock(lineIdx) {
-		return lipgloss.NewStyle().Background(lipgloss.Color("#2D4F7C"))
-	}
+func (m *AppModel) styleLineFunc(_ int) lipgloss.Style {
 	return lipgloss.NewStyle()
 }
 
