@@ -422,15 +422,7 @@ func (m AppModel) renderHelp() string {
 
 // openCommentModal opens the comment creation modal for a block.
 func (m *AppModel) openCommentModal(sel SelectionResult) {
-	startLine := sel.StartSourceLine
-	endLine := min(sel.EndSourceLine+1, len(m.doc.RawLines))
-	lines := m.doc.RawLines[startLine:endLine]
-	numbered := make([]string, len(lines))
-	for i, l := range lines {
-		numbered[i] = fmt.Sprintf("%d: %s", startLine+i+1, l)
-	}
-	snippet := strings.Join(numbered, "\n")
-
+	snippet := m.buildSnippetRange(sel.StartSourceLine, sel.EndSourceLine+1)
 	cm := newCreateModal(snippet, sel, m.width, m.height)
 	m.commentModal = &cm
 	m.state = StateComment
@@ -702,20 +694,42 @@ func (m *AppModel) buildSnippet(comment *ReviewComment, id string) string {
 		}
 		startLine := marker.SourceLine + comment.Offset
 		endLine := startLine + comment.Span
-		if endLine > len(m.doc.RawLines) {
-			endLine = len(m.doc.RawLines)
-		}
-		if startLine >= len(m.doc.RawLines) {
-			return ""
-		}
-		lines := m.doc.RawLines[startLine:endLine]
-		numbered := make([]string, len(lines))
-		for i, l := range lines {
-			numbered[i] = fmt.Sprintf("%d: %s", startLine+i+1, l)
-		}
-		return strings.Join(numbered, "\n")
+		return m.buildSnippetRange(startLine, endLine)
 	}
 	return ""
+}
+
+// buildSnippetRange builds a numbered source snippet with context lines above/below.
+// startLine and endLine are 0-based indices in RawLines (endLine exclusive).
+func (m *AppModel) buildSnippetRange(startLine, endLine int) string {
+	contextLines := 2
+
+	ctxStart := max(0, startLine-contextLines)
+	ctxEnd := min(len(m.doc.RawLines), endLine+contextLines)
+
+	if ctxStart >= len(m.doc.RawLines) {
+		return ""
+	}
+
+	maxNum := ctxEnd
+	numWidth := len(fmt.Sprintf("%d", maxNum))
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	var numbered []string
+	for i := ctxStart; i < ctxEnd; i++ {
+		l := m.doc.RawLines[i]
+		// Skip ref marker lines
+		if strings.Contains(l, "@review-ref") {
+			continue
+		}
+		numStr := fmt.Sprintf("%*d", numWidth, i+1)
+		if i < startLine || i >= endLine {
+			numbered = append(numbered, dimStyle.Render(fmt.Sprintf("%s: %s", numStr, l)))
+		} else {
+			numbered = append(numbered, fmt.Sprintf("%s: %s", numStr, l))
+		}
+	}
+	return strings.Join(numbered, "\n")
 }
 
 // Line mapping and block identification helpers.
