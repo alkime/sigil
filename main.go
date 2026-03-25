@@ -4,27 +4,15 @@ import (
 	"fmt"
 	"os"
 
-	tea "charm.land/bubbletea/v2"
-	"github.com/alkime/sigil/model"
-	"github.com/alkime/sigil/parser"
-	"github.com/alkime/sigil/writer"
+	"github.com/alecthomas/kong"
+	"github.com/alkime/sigil/cli"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: sigil <file.md>")
-		os.Exit(1)
-	}
-
-	doc, err := parser.Parse(os.Args[1])
+	var c cli.CLI
+	ctx := kong.Parse(&c, kong.Name("sigil"), kong.Description("Terminal Markdown viewer with inline review commenting."))
+	err := ctx.Run(&cli.CLIContext{Out: os.Stdout})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	app := model.NewApp(doc, writer.WriteComment, writer.UpdateComment, writer.DeleteComment)
-	p := tea.NewProgram(app)
-	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
