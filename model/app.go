@@ -230,7 +230,7 @@ func (m AppModel) handleResolve() (tea.Model, tea.Cmd) {
 	newDoc, err := m.updateFn(m.doc, comment.ID, comment.Comment, newStatus)
 	if err == nil {
 		m.doc = newDoc
-		m.initViewport()
+		m.refreshViewport()
 	}
 	return m, nil
 }
@@ -246,7 +246,7 @@ func (m AppModel) handleDelete() (tea.Model, tea.Cmd) {
 		newDoc, err := m.updateFn(m.doc, comment.ID, comment.Comment, "resolved")
 		if err == nil {
 			m.doc = newDoc
-			m.initViewport()
+			m.refreshViewport()
 		}
 		return m, nil
 	}
@@ -301,7 +301,7 @@ func (m AppModel) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.commentModal = nil
 			m.state = StateBrowse
-			m.initViewport()
+			m.refreshViewport()
 			return m, nil
 		case "n", "esc":
 			m.commentModal = nil
@@ -327,7 +327,7 @@ func (m AppModel) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.commentModal = nil
 		m.state = StateBrowse
-		m.initViewport()
+		m.refreshViewport()
 		return m, nil
 	}
 
@@ -372,7 +372,7 @@ func (m AppModel) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.doc = newDoc
 		m.commentModal = nil
 		m.state = StateBrowse
-		m.initViewport()
+		m.refreshViewport()
 		return m, nil
 	}
 
@@ -476,8 +476,21 @@ func (m *AppModel) openInspectForBlock() {
 	}
 }
 
-// initViewport renders the markdown and sets up the viewport.
+// initViewport renders the markdown and sets up the viewport from scratch.
 func (m *AppModel) initViewport() {
+	m.rebuildViewport(-1, -1)
+}
+
+// refreshViewport re-renders content while preserving scroll and cursor position.
+func (m *AppModel) refreshViewport() {
+	savedOffset := m.viewport.YOffset()
+	savedCursor := m.nav.selector.CursorBlock
+	m.rebuildViewport(savedOffset, savedCursor)
+}
+
+// rebuildViewport does the actual viewport setup. Pass -1 for both params
+// to start fresh (no position restoration).
+func (m *AppModel) rebuildViewport(restoreOffset, restoreCursor int) {
 	vpHeight := m.height - 2 // status bar + context hint line
 
 	rendered := m.renderMarkdown()
@@ -500,6 +513,14 @@ func (m *AppModel) initViewport() {
 
 	m.viewport.LeftGutterFunc = m.gutterFunc
 	m.viewport.StyleLineFunc = m.styleLineFunc
+
+	// Restore position if requested
+	if restoreOffset >= 0 {
+		m.viewport.SetYOffset(restoreOffset)
+	}
+	if restoreCursor >= 0 && restoreCursor < len(m.nav.selector.Blocks) {
+		m.nav.selector.CursorBlock = restoreCursor
+	}
 
 	m.statusbar = newStatusBar(m.doc.FilePath, m.width)
 	m.statusbar.scrollPct = m.viewport.ScrollPercent()
