@@ -235,22 +235,12 @@ func (m AppModel) handleResolve() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleDelete: two-stage — first resolves, then prompts for hard delete.
+// handleDelete prompts for hard delete on resolved comments. No-op on open ones.
 func (m AppModel) handleDelete() (tea.Model, tea.Cmd) {
 	comment := m.focusedComment()
-	if comment == nil {
+	if comment == nil || comment.Status != "resolved" {
 		return m, nil
 	}
-	if comment.Status == "open" {
-		// First d: soft delete (resolve)
-		newDoc, err := m.updateFn(m.doc, comment.ID, comment.Comment, "resolved")
-		if err == nil {
-			m.doc = newDoc
-			m.refreshViewport()
-		}
-		return m, nil
-	}
-	// Already resolved: open confirm-delete modal
 	snippet := m.buildSnippetForComment(comment)
 	cm := newEditModal(comment, snippet, m.width, m.height)
 	cm.SetConfirmDelete()
@@ -397,6 +387,11 @@ func (m AppModel) View() tea.View {
 		content = m.renderHelp()
 	default:
 		m.statusbar.onCommentBlock = m.nav.commentedBlocks[m.nav.selector.CursorBlock]
+		if c := m.focusedComment(); c != nil {
+			m.statusbar.commentResolved = c.Status == "resolved"
+		} else {
+			m.statusbar.commentResolved = false
+		}
 		vpView := m.viewport.View()
 		contextHint := m.statusbar.ContextHintView()
 		sbView := m.statusbar.View(m.isDark)
@@ -420,7 +415,7 @@ func (m AppModel) renderHelp() string {
 		{"x", "Select block range"},
 		{"Enter", "Edit or add comment"},
 		{"r", "Resolve / reopen"},
-		{"d", "Delete comment"},
+		{"d", "Delete resolved comment"},
 		{"Shift+j/k", "Half-page scroll"},
 		{"u", "Half-page up"},
 		{"g", "Go to top"},

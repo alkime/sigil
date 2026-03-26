@@ -12,6 +12,7 @@ type StatusBarModel struct {
 	scrollPct      float64
 	width          int
 	onCommentBlock bool
+	commentResolved bool
 }
 
 func newStatusBar(filename string, width int) StatusBarModel {
@@ -31,7 +32,11 @@ func (m StatusBarModel) ContextHintView() string {
 	hintStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#888888"))
 
-	hints := hintStyle.Render("r: resolve/reopen   d: delete")
+	hint := "r: resolve/reopen"
+	if m.commentResolved {
+		hint += "   d: delete"
+	}
+	hints := hintStyle.Render(hint)
 	pad := strings.Repeat(" ", max(0, m.width-lipgloss.Width(hints)))
 
 	return pad + hints
