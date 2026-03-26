@@ -636,22 +636,32 @@ func (m *AppModel) buildCommentedBlocksMap() {
 }
 
 // Unified gutter function.
-// Focused + commented: ▶/│/▶ bracket in orange (no blue bar)
+// Focused + commented: ▶/│/▶ bracket in orange (open) or dim green (resolved)
 // Focused + uncommented: blue ▎ bar
-// Unfocused + commented: ● on first line
+// Unfocused + commented: ● on first line in orange (open) or dim green (resolved)
 // Unfocused + uncommented: blank
 func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 	isCursor := m.nav.selector.IsCursorBlock(ctx.Index)
-	commentPos := m.commentLinePosition(ctx.Index)
+	commentPos, resolved := m.commentLinePosition(ctx.Index)
 
 	orangeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800"))
 	orangeBold := orangeStyle.Bold(true)
+	greenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5A7A5A"))
+	greenBold := greenStyle.Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
 	blueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5599FF"))
 
+	// Pick color based on resolved status
+	accentStyle := orangeStyle
+	accentBold := orangeBold
+	if resolved {
+		accentStyle = greenStyle
+		accentBold = greenBold
+	}
+
 	if ctx.Soft || ctx.Index >= ctx.TotalLines {
 		if isCursor && commentPos != "" {
-			return orangeStyle.Render("│") + "  "
+			return accentStyle.Render("│") + "  "
 		}
 		if isCursor {
 			return "  " + blueStyle.Render("▎")
@@ -659,27 +669,27 @@ func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 		return "   "
 	}
 
-	// Focused commented block: orange bracket
+	// Focused commented block: bracket
 	if isCursor && commentPos != "" {
 		switch commentPos {
-		case "only": // single-line comment
-			return orangeBold.Render("▶") + "  "
+		case "only":
+			return accentBold.Render("▶") + "  "
 		case "first":
-			return orangeBold.Render("▶") + "  "
+			return accentBold.Render("▶") + "  "
 		case "middle":
-			return orangeStyle.Render("│") + "  "
+			return accentStyle.Render("│") + "  "
 		case "last":
-			return orangeBold.Render("▶") + "  "
+			return accentBold.Render("▶") + "  "
 		}
 	}
 
-	// Unfocused commented block: ● on first line, │ on middle, nothing on last
+	// Unfocused commented block: ● on first line, │ on middle, ╵ on last
 	if commentPos != "" && !isCursor {
 		switch commentPos {
 		case "only":
-			return orangeStyle.Render("●") + "  "
+			return accentStyle.Render("●") + "  "
 		case "first":
-			return orangeStyle.Render("●") + "  "
+			return accentStyle.Render("●") + "  "
 		case "middle":
 			return dimStyle.Render("│") + "  "
 		case "last":
@@ -697,7 +707,7 @@ func (m *AppModel) gutterFunc(ctx viewport.GutterContext) string {
 
 // commentLinePosition returns where a rendered line sits in its commented block.
 // Returns "first", "middle", "last", "only", or "" if not in a commented block.
-func (m *AppModel) commentLinePosition(renderedLine int) string {
+func (m *AppModel) commentLinePosition(renderedLine int) (pos string, resolved bool) {
 	// Find the commented block containing this line
 	for bi, b := range m.nav.contentBlocks {
 		if !m.nav.commentedBlocks[bi] {
@@ -706,19 +716,28 @@ func (m *AppModel) commentLinePosition(renderedLine int) string {
 		if renderedLine < b.RenderedStart || renderedLine > b.RenderedEnd {
 			continue
 		}
+		// Check if the comment is resolved
+		for ri := b.RenderedStart; ri <= b.RenderedEnd; ri++ {
+			if ids, ok := m.nav.renderedToComments[ri]; ok && len(ids) > 0 {
+				if c, ok := m.doc.CommentByID[ids[0]]; ok {
+					resolved = c.Status == "resolved"
+				}
+				break
+			}
+		}
 		// This line is in a commented block
 		if b.RenderedStart == b.RenderedEnd {
-			return "only"
+			return "only", resolved
 		}
 		if renderedLine == b.RenderedStart {
-			return "first"
+			return "first", resolved
 		}
 		if renderedLine == b.RenderedEnd {
-			return "last"
+			return "last", resolved
 		}
-		return "middle"
+		return "middle", resolved
 	}
-	return ""
+	return "", false
 }
 
 // firstLineOfCommentedBlock checks if renderedLine is the first line of the first
