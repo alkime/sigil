@@ -936,10 +936,10 @@ func buildLineMapping(contentLines []string, renderedLines []string) []int {
 		return mapping
 	}
 
-	// Use heading lines as anchor points for the mapping, then linearly
-	// interpolate between anchors.  This avoids the old 1:1 block-index
-	// approach which drifts when Glamour adds/removes lines for code
-	// fences, tables, diagrams, etc.
+	// Build anchors by matching content lines to rendered lines, then
+	// interpolate between anchors. Headings are matched first (strongest
+	// signal), then non-blank content lines fill gaps where interpolation
+	// would otherwise be too coarse.
 
 	// Strip ANSI from rendered lines once for matching.
 	stripped := make([]string, len(renderedLines))
@@ -950,6 +950,7 @@ func buildLineMapping(contentLines []string, renderedLines []string) []int {
 	type anchor struct{ ci, ri int }
 	anchors := []anchor{{0, 0}}
 
+	// Pass 1: anchor on heading lines.
 	nextR := 0
 	inCodeBlock := false
 	for ci, line := range contentLines {
@@ -974,7 +975,59 @@ func buildLineMapping(contentLines []string, renderedLines []string) []int {
 		}
 	}
 
+	// Pass 2: anchor on non-blank, non-heading content lines to improve
+	// accuracy in sections with few headings. Only match lines that are
+	// long enough to be unambiguous.
+	anchorSet := make(map[int]bool)
+	for _, a := range anchors {
+		anchorSet[a.ci] = true
+	}
+	nextR = 0
+	inCodeBlock = false
+	for ci, line := range contentLines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeBlock = !inCodeBlock
+			continue
+		}
+		if inCodeBlock || anchorSet[ci] || trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Use a prefix to avoid false matches on very short lines.
+		// Take the first 20 chars (or full line if shorter) as the match key.
+		matchText := trimmed
+		if len(matchText) < 4 {
+			continue
+		}
+		if len(matchText) > 20 {
+			matchText = matchText[:20]
+		}
+		for ri := nextR; ri < len(renderedLines); ri++ {
+			if strings.Contains(stripped[ri], matchText) {
+				anchors = append(anchors, anchor{ci, ri})
+				nextR = ri + 1
+				break
+			}
+		}
+	}
+
 	anchors = append(anchors, anchor{len(contentLines) - 1, len(renderedLines) - 1})
+
+	// Sort anchors by content line index (pass 2 may have interleaved).
+	for i := 1; i < len(anchors); i++ {
+		for j := i; j > 0 && anchors[j].ci < anchors[j-1].ci; j-- {
+			anchors[j], anchors[j-1] = anchors[j-1], anchors[j]
+		}
+	}
+
+	// Deduplicate: keep only the first anchor per content line.
+	deduped := anchors[:0]
+	for _, a := range anchors {
+		if len(deduped) == 0 || deduped[len(deduped)-1].ci != a.ci {
+			deduped = append(deduped, a)
+		}
+	}
+	anchors = deduped
 
 	// Interpolate between consecutive anchors.
 	for i := 0; i < len(anchors)-1; i++ {

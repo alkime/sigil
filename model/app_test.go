@@ -585,6 +585,47 @@ func TestInspectModalShowsCommentID(t *testing.T) {
 	}
 }
 
+// TestCommentMappingSingleHeading verifies that comments are correctly mapped
+// to blocks even in documents with only one heading. Regression test for a bug
+// where buildLineMapping's interpolation placed comment markers on blank lines
+// between blocks instead of on the actual content.
+func TestCommentMappingSingleHeading(t *testing.T) {
+	const doc = `# Title
+
+<!-- @review-ref 0001 -->
+Commented paragraph.
+
+Plain paragraph.
+
+<!--
+@review-backmatter
+
+"0001":
+  offset: 1
+  span: 1
+  comment: "Needs work"
+  status: open
+-->
+`
+	m, tmpPath := setupApp(t, doc)
+
+	// n should find the commented block even with a single heading
+	m = send(m, "n")
+	if !viewHasGutterMarker(m) {
+		t.Error("comment not associated with any block in single-heading document")
+	}
+
+	// r should resolve the comment
+	m = send(m, "r")
+	parsed, err := parser.Parse(tmpPath)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if parsed.CommentByID["0001"].Status != "resolved" {
+		t.Errorf("expected 'resolved' in single-heading doc, got %q", parsed.CommentByID["0001"].Status)
+	}
+}
+
 func TestDeleteConfirmShowsPrompt(t *testing.T) {
 	m, _ := setupAppFromFile(t, "../testdata/sample.md")
 	// Resolve first, then d
