@@ -555,10 +555,25 @@ func (m *AppModel) buildRenderedCommentMap(renderedLines []string) {
 
 	contentToRendered := buildLineMapping(m.doc.ContentLines, renderedLines)
 
+	// Build renderedToSource, resolving conflicts by keeping the content line
+	// whose index is closest to the rendered line index. This prevents misaligned
+	// content lines (from buildLineMapping's block-index fallback) from
+	// overwriting correct mappings with wildly wrong source line values.
+	bestCI := make(map[int]int) // ri -> ci of the best content line for that rendered line
 	for ci, ri := range contentToRendered {
-		if ri < len(renderedLines) && ci < len(m.doc.ContentToSource) {
-			m.nav.renderedToSource[ri] = m.doc.ContentToSource[ci]
+		if ri >= len(renderedLines) || ci >= len(m.doc.ContentToSource) {
+			continue
 		}
+		if prevCI, ok := bestCI[ri]; ok {
+			// Keep the content line closer to this rendered line
+			if abs(ci-ri) >= abs(prevCI-ri) {
+				continue
+			}
+		}
+		bestCI[ri] = ci
+	}
+	for ri, ci := range bestCI {
+		m.nav.renderedToSource[ri] = m.doc.ContentToSource[ci]
 	}
 
 	for ci, ids := range m.doc.CommentedContentLines {
@@ -921,36 +936,57 @@ func buildLineMapping(contentLines []string, renderedLines []string) []int {
 		return mapping
 	}
 
-	contentBlocks := identifyBlocks(contentLines)
-	renderedBlocks := identifyBlocks(renderedLines)
+	// Use heading lines as anchor points for the mapping, then linearly
+	// interpolate between anchors.  This avoids the old 1:1 block-index
+	// approach which drifts when Glamour adds/removes lines for code
+	// fences, tables, diagrams, etc.
 
-	for ci := range contentLines {
-		cBlockIdx := -1
-		var cBlock block
-		lineInBlock := 0
-		for bi, b := range contentBlocks {
-			if ci >= b.start && ci <= b.end {
-				cBlockIdx = bi
-				cBlock = b
-				lineInBlock = ci - b.start
+	// Strip ANSI from rendered lines once for matching.
+	stripped := make([]string, len(renderedLines))
+	for i, l := range renderedLines {
+		stripped[i] = strings.TrimSpace(ansi.Strip(l))
+	}
+
+	type anchor struct{ ci, ri int }
+	anchors := []anchor{{0, 0}}
+
+	nextR := 0
+	inCodeBlock := false
+	for ci, line := range contentLines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeBlock = !inCodeBlock
+			continue
+		}
+		if inCodeBlock || !strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		headingText := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+		if headingText == "" {
+			continue
+		}
+		for ri := nextR; ri < len(renderedLines); ri++ {
+			if strings.Contains(stripped[ri], headingText) {
+				anchors = append(anchors, anchor{ci, ri})
+				nextR = ri + 1
 				break
 			}
 		}
+	}
 
-		if cBlockIdx < 0 || cBlockIdx >= len(renderedBlocks) {
-			mapping[ci] = min(ci, len(renderedLines)-1)
-			continue
-		}
+	anchors = append(anchors, anchor{len(contentLines) - 1, len(renderedLines) - 1})
 
-		rBlock := renderedBlocks[cBlockIdx]
-		cBlockSize := cBlock.end - cBlock.start + 1
-		rBlockSize := rBlock.end - rBlock.start + 1
-
-		if cBlockSize > 0 {
-			ri := rBlock.start + (lineInBlock * rBlockSize / cBlockSize)
-			mapping[ci] = min(ri, len(renderedLines)-1)
-		} else {
-			mapping[ci] = rBlock.start
+	// Interpolate between consecutive anchors.
+	for i := 0; i < len(anchors)-1; i++ {
+		a, b := anchors[i], anchors[i+1]
+		cSpan := b.ci - a.ci
+		rSpan := b.ri - a.ri
+		for ci := a.ci; ci <= b.ci && ci < len(contentLines); ci++ {
+			if cSpan > 0 {
+				mapping[ci] = min(a.ri+(ci-a.ci)*rSpan/cSpan, len(renderedLines)-1)
+			} else {
+				mapping[ci] = a.ri
+			}
 		}
 	}
 
@@ -987,6 +1023,13 @@ func identifyBlocks(lines []string) []block {
 	}
 
 	return blocks
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 var _ tea.Model = AppModel{}

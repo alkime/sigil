@@ -35,6 +35,7 @@ Client → API Gateway → Gateway Service → Processing Engine → Card Networ
 
 We use PostgreSQL with the following core tables:
 
+<!-- @review-ref 0003 -->
 | Table | Purpose | Estimated Rows |
 |-------|---------|---------------|
 | `transactions` | All payment events | ~500M |
@@ -158,6 +159,12 @@ Phase 2 (Week 3-4):
   offset: 1
   span: 26
   comment: "bad ass"
+  status: open
+
+"0003":
+  offset: 1
+  span: 6
+  comment: "test"
   status: open
 
 -->
