@@ -242,7 +242,8 @@ func (m AppModel) handleDelete() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	snippet := m.buildSnippetForComment(comment)
-	cm := newEditModal(comment, snippet, m.width, m.height)
+	startLine, endLine := m.commentLineRange(comment, comment.ID)
+	cm := newEditModal(comment, snippet, startLine, endLine, m.width, m.height)
 	cm.SetConfirmDelete()
 	m.commentModal = &cm
 	m.state = StateInspect
@@ -319,9 +320,15 @@ func (m AppModel) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.state = StateBrowse
 		m.refreshViewport()
 		return m, nil
+
+	case "tab":
+		if m.commentModal.snippetScrollable() {
+			cmd := m.commentModal.ToggleFocus()
+			return m, cmd
+		}
 	}
 
-	// Pass to textarea
+	// Pass to focused component (textarea or snippet viewport)
 	cmd := m.commentModal.Update(msg)
 	return m, cmd
 }
@@ -364,6 +371,12 @@ func (m AppModel) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.state = StateBrowse
 		m.refreshViewport()
 		return m, nil
+
+	case "tab":
+		if m.commentModal.snippetScrollable() {
+			cmd := m.commentModal.ToggleFocus()
+			return m, cmd
+		}
 	}
 
 	cmd := m.commentModal.Update(msg)
@@ -392,6 +405,8 @@ func (m AppModel) View() tea.View {
 		} else {
 			m.statusbar.commentResolved = false
 		}
+		m.statusbar.currentLine = m.viewport.YOffset() + 1
+		m.statusbar.totalLines = m.viewport.TotalLineCount()
 		vpView := m.viewport.View()
 		contextHint := m.statusbar.ContextHintView()
 		sbView := m.statusbar.View(m.isDark)
@@ -441,7 +456,7 @@ func (m AppModel) renderHelp() string {
 // openCommentModal opens the comment creation modal for a block.
 func (m *AppModel) openCommentModal(sel SelectionResult) {
 	snippet := m.buildSnippetRange(sel.StartSourceLine, sel.EndSourceLine+1)
-	cm := newCreateModal(snippet, sel, m.width, m.height)
+	cm := newCreateModal(snippet, sel, sel.StartSourceLine+1, sel.EndSourceLine+1, m.width, m.height)
 	m.commentModal = &cm
 	m.state = StateComment
 }
@@ -464,7 +479,8 @@ func (m *AppModel) openInspectForBlock() {
 			continue
 		}
 		snippet := m.buildSnippet(comment, ids[0])
-		cm := newEditModal(comment, snippet, m.width, m.height)
+		startLine, endLine := m.commentLineRange(comment, ids[0])
+		cm := newEditModal(comment, snippet, startLine, endLine, m.width, m.height)
 		m.commentModal = &cm
 		m.state = StateInspect
 		return
@@ -883,6 +899,19 @@ func (m *AppModel) buildSnippetForComment(comment *ReviewComment) string {
 	return m.buildSnippet(comment, comment.ID)
 }
 
+// commentLineRange returns 1-based start and end line numbers for the comment.
+func (m *AppModel) commentLineRange(comment *ReviewComment, id string) (int, int) {
+	for _, marker := range m.doc.RefMarkers {
+		if marker.ID != id {
+			continue
+		}
+		start := marker.SourceLine + comment.Offset
+		end := start + comment.Span - 1
+		return start + 1, end + 1
+	}
+	return 0, 0
+}
+
 func (m *AppModel) buildSnippet(comment *ReviewComment, id string) string {
 	for _, marker := range m.doc.RefMarkers {
 		if marker.ID != id {
@@ -898,7 +927,7 @@ func (m *AppModel) buildSnippet(comment *ReviewComment, id string) string {
 // buildSnippetRange builds a numbered source snippet with context lines above/below.
 // startLine and endLine are 0-based indices in RawLines (endLine exclusive).
 func (m *AppModel) buildSnippetRange(startLine, endLine int) string {
-	contextLines := 2
+	contextLines := 15
 
 	ctxStart := max(0, startLine-contextLines)
 	ctxEnd := min(len(m.doc.RawLines), endLine+contextLines)

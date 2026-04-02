@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -8,10 +9,12 @@ import (
 
 // StatusBarModel renders the bottom status area: keybinding hints + file info.
 type StatusBarModel struct {
-	filename       string
-	scrollPct      float64
-	width          int
-	onCommentBlock bool
+	filename        string
+	scrollPct       float64
+	currentLine     int
+	totalLines      int
+	width           int
+	onCommentBlock  bool
 	commentResolved bool
 }
 
@@ -63,9 +66,13 @@ func (m StatusBarModel) View(isDark bool) string {
 		Padding(0, 1)
 
 	left := infoStyle.Render(m.filename)
+
+	pct := int(m.scrollPct * 100)
+	position := infoStyle.Render(fmt.Sprintf("%d/%d (%d%%)", m.currentLine, m.totalLines, pct))
+
 	hints := hintStyle.Render("j/k: blocks   n/N: comments   Enter: edit   ?: help")
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(hints)
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(position) - lipgloss.Width(hints)
 	if gap < 0 {
 		gap = 0
 	}
@@ -75,5 +82,5 @@ func (m StatusBarModel) View(isDark bool) string {
 		Width(gap).
 		Render("")
 
-	return left + pad + hints
+	return left + pad + position + hints
 }
