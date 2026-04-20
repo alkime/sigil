@@ -1,6 +1,6 @@
 ---
 id: sig-kota
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-04-20T16:47:51Z
