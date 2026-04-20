@@ -489,10 +489,9 @@ func (m *Model) rebuildDiffView() {
 	m.viewport.KeyMap.Down.SetEnabled(false)
 
 	if m.fileIdx == -1 {
-		// PR Comments view: show all comments with File == "".
-		content := renderPRComments(m.comments, m.width)
-		m.viewport.SetContent(content)
-		m.linesMeta = nil
+		result := renderPRComments(m.comments, m.width)
+		m.viewport.SetContent(result.content)
+		m.linesMeta = result.linesMeta
 		m.hunkStarts = nil
 		m.commentPositions = nil
 		m.focusedLine = 0

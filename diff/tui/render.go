@@ -267,8 +267,9 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 	return sb.String()
 }
 
-// renderPRComments renders all PR-level comments (File == "") into a viewport string.
-func renderPRComments(comments []*diff.Comment, width int) string {
+// renderPRComments renders all PR-level comments (File == "") and returns
+// content + linesMeta so Enter can open the inspect modal on any comment line.
+func renderPRComments(comments []*diff.Comment, width int) diffRenderResult {
 	var prComments []*diff.Comment
 	for _, c := range comments {
 		if c.File == "" && !c.Orphaned {
@@ -277,10 +278,11 @@ func renderPRComments(comments []*diff.Comment, width int) string {
 	}
 
 	if len(prComments) == 0 {
-		return keyHintDescStyle.Render("  No PR-level comments yet. Press C to add one.")
+		return diffRenderResult{content: keyHintDescStyle.Render("  No PR-level comments yet. Press C to add one.")}
 	}
 
 	var lines []string
+	var meta []lineInfo
 	for _, c := range prComments {
 		var marker string
 		if c.Resolved {
@@ -294,14 +296,18 @@ func renderPRComments(comments []*diff.Comment, width int) string {
 			status = resolvedMarkStyle.Render(" [resolved]")
 		}
 		header := marker + author + keyHintDescStyle.Render(c.CreatedAt.Format("2006-01-02 15:04")) + status
+		commentLine := lineInfo{isComment: true, commentID: c.ID}
 		lines = append(lines, header)
+		meta = append(meta, commentLine)
 		for _, bodyLine := range strings.Split(c.Body, "\n") {
 			lines = append(lines, "      "+contextStyle.Render(bodyLine))
+			meta = append(meta, commentLine)
 		}
 		lines = append(lines, "")
+		meta = append(meta, lineInfo{})
 	}
 
-	return strings.Join(lines, "\n")
+	return diffRenderResult{content: strings.Join(lines, "\n"), linesMeta: meta}
 }
 
 // renderKeyBar renders the bottom key hint bar.
