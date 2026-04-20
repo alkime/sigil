@@ -22,9 +22,17 @@ type Worktree struct {
 // ErrNotGitHub is returned when the origin remote is not a github.com host.
 var ErrNotGitHub = errors.New("remote is not a GitHub host")
 
-// ListWorktrees runs `git worktree list --porcelain` and returns all worktrees.
+// ListWorktrees runs `git worktree list --porcelain` from the current working directory.
 func ListWorktrees(ctx context.Context) ([]Worktree, error) {
-	out, err := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain").Output()
+	return listWorktrees(ctx, "")
+}
+
+func listWorktrees(ctx context.Context, cwd string) ([]Worktree, error) {
+	args := []string{"worktree", "list", "--porcelain"}
+	if cwd != "" {
+		args = append([]string{"-C", cwd}, args...)
+	}
+	out, err := exec.CommandContext(ctx, "git", args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git worktree list: %w", err)
 	}
