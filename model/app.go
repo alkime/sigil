@@ -178,13 +178,13 @@ func (m AppModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "J", "shift+down":
+	case "J", "shift+down", "ctrl+d":
 		m.viewport.HalfPageDown()
 		m.snapCursorToViewport()
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
 		return m, nil
 
-	case "K", "shift+up":
+	case "K", "shift+up", "ctrl+u":
 		m.viewport.HalfPageUp()
 		m.snapCursorToViewport()
 		m.statusbar.scrollPct = m.viewport.ScrollPercent()
@@ -431,8 +431,8 @@ func (m AppModel) renderHelp() string {
 		{"Enter", "Edit or add comment"},
 		{"r", "Resolve / reopen"},
 		{"d", "Delete resolved comment"},
-		{"Shift+j/k", "Half-page scroll"},
-		{"u", "Half-page up"},
+		{"Ctrl+d / Ctrl+u", "Half-page down / up"},
+		{"Shift+j / k", "Half-page down / up"},
 		{"g", "Go to top"},
 		{"G", "Go to bottom"},
 		{"?", "Toggle this help"},
