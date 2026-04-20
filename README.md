@@ -13,12 +13,24 @@ Grab a tarball for your platform from the [releases page](https://github.com/alk
 ```bash
 # example: macOS Apple Silicon
 tar -xzf sigil_<version>_darwin_arm64.tar.gz
-./sigil --version
+cd sigil_<version>_darwin_arm64
+./INSTALL.sh
 ```
 
-`checksums.txt` is published alongside the archives — verify with `shasum -a 256 -c checksums.txt`.
+`INSTALL.sh` verifies the bundled `sigil.sha256`, strips the macOS quarantine attribute (Gatekeeper won't prompt), and moves the binary into `~/.local/bin` if it exists. If that directory doesn't exist, it leaves the binary in place and prints a one-liner to finish the job.
 
-> On macOS, Gatekeeper will warn on first launch because the binary isn't signed yet. Right-click → Open, or run `xattr -d com.apple.quarantine ./sigil`.
+<details>
+<summary>Manual install (skip the script)</summary>
+
+```bash
+tar -xzf sigil_<version>_darwin_arm64.tar.gz
+shasum -a 256 -c sigil.sha256          # verify
+xattr -d com.apple.quarantine sigil    # macOS only — clear Gatekeeper
+mv sigil ~/.local/bin/                 # or anywhere on PATH
+```
+
+`checksums.txt` on the release page covers the archives themselves; the bundled `sigil.sha256` covers the extracted binary.
+</details>
 
 ### From source
 

@@ -23,15 +23,24 @@ builds:
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
+    hooks:
+      post:
+        # Write a per-binary sha256 sidecar that INSTALL.sh verifies at install time.
+        - cmd: sh -c 'cd "$(dirname "{{ .Path }}")" && (command -v sha256sum >/dev/null && sha256sum sigil || shasum -a 256 sigil) > sigil.sha256'
 
 archives:
   - id: sigil
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats:
       - tar.gz
+    wrap_in_directory: true
     files:
       - README.md
       - LICENSE*
+      - INSTALL.sh
+      - src: "dist/sigil_{{ .Os }}_{{ .Arch }}*/sigil.sha256"
+        dst: .
+        strip_parent: true
 
 checksum:
   name_template: "checksums.txt"
