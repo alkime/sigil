@@ -220,6 +220,7 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = ModeNormal
 		m.statusMsg = ""
+		m.rebuildDiffView()
 		return m, nil
 
 	case "ctrl+s":
@@ -227,6 +228,7 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if body == "" {
 			m.mode = ModeNormal
 			m.statusMsg = ""
+			m.rebuildDiffView()
 			return m, nil
 		}
 		if err := m.submitComment(body); err != nil {
@@ -235,6 +237,7 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "comment added"
 		}
 		m.mode = ModeNormal
+		m.rebuildDiffView()
 		return m, nil
 	}
 
@@ -532,6 +535,7 @@ func (m Model) enterCommentMode() (tea.Model, tea.Cmd) {
 	m.commentHunkIdx = meta.hunkIdx
 	m.commentSide = side
 	m.mode = ModeComment
+	m.rebuildDiffView()
 
 	return m, m.commentTA.Focus()
 }
