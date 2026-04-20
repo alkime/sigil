@@ -25,8 +25,10 @@ var (
 	commentMarkStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
 	resolvedMarkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#669966"))
 	headerStyle       = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#EEEEEE")).Bold(true)
-	fileActiveStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
-	fileStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	fileActiveStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+	fileStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	prCommentsStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
+	prCommentsActiveStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00")).Bold(true)
 	fileNavHintStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#AAAAAA")).Bold(true)
 	keyHintKeyStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
 	keyHintDescStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA"))
@@ -211,10 +213,12 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 				dot = commentMarkStyle.Render(fmt.Sprintf(" ●%d", n))
 			}
 			if uIdx == 0 {
-				sb.WriteString(fileActiveStyle.Render("  ▸ PR Comments") + dot)
+				sb.WriteString(prCommentsActiveStyle.Render("  ▸ ◉ PR Comments") + dot)
 			} else {
-				sb.WriteString(fileStyle.Render("    PR Comments") + dot)
+				sb.WriteString(prCommentsStyle.Render("    ◉ PR Comments") + dot)
 			}
+			sb.WriteByte('\n')
+			sb.WriteString(separatorStyle.Render("    · · ·"))
 		} else {
 			i := u - 1
 			f := files[i]

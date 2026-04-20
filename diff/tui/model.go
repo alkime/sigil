@@ -17,6 +17,15 @@ import (
 	"github.com/alkime/sigil/diff"
 )
 
+type clearStatusMsg struct{}
+
+func clearStatusCmd() tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(2 * time.Second)
+		return clearStatusMsg{}
+	}
+}
+
 // Mode represents the current UI mode.
 type Mode int
 
@@ -108,6 +117,10 @@ func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case clearStatusMsg:
+		m.statusMsg = ""
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -226,13 +239,13 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
-			m.toggleCommentResolved(m.linesMeta[fl].commentID, true)
+			return m, m.toggleCommentResolved(m.linesMeta[fl].commentID, true)
 		}
 		return m, nil
 
 	case "u":
 		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
-			m.toggleCommentResolved(m.linesMeta[fl].commentID, false)
+			return m, m.toggleCommentResolved(m.linesMeta[fl].commentID, false)
 		}
 		return m, nil
 
@@ -277,11 +290,11 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if err := m.submitComment(body); err != nil {
 			m.statusMsg = fmt.Sprintf("error saving comment: %v", err)
-		} else {
-			m.statusMsg = "comment added"
+			return m, nil
 		}
+		m.statusMsg = "comment added"
 		m.mode = ModeNormal
-		return m, nil
+		return m, clearStatusCmd()
 	}
 
 	var cmd tea.Cmd
@@ -342,13 +355,13 @@ func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if err := m.saveComments(); err != nil {
 			m.statusMsg = fmt.Sprintf("error saving: %v", err)
-		} else {
-			m.statusMsg = "comment updated"
+			return m, nil
 		}
+		m.statusMsg = "comment updated"
 		m.mode = ModeNormal
 		m.inspectID = ""
 		m.rebuildDiffView()
-		return m, nil
+		return m, clearStatusCmd()
 
 	case "tab":
 		m.inspectHunkFocus = !m.inspectHunkFocus
@@ -523,16 +536,16 @@ func (m *Model) viewportHeight() int {
 }
 
 func fileListHeight(fileCount int) int {
-	// Always includes the virtual "PR Comments" entry (+1).
+	// Always includes the virtual "PR Comments" entry (+1) and its separator (+1).
 	total := fileCount + 1
 	visible := total
 	if visible > maxVisibleFiles {
 		visible = maxVisibleFiles
 	}
 	if total >= 2 {
-		return visible + 1 // entries + nav hint line
+		return visible + 2 // entries + separator + nav hint
 	}
-	return visible
+	return visible + 1 // entry + separator
 }
 
 func (m *Model) moveLine(delta int) {
@@ -887,14 +900,14 @@ func (m Model) toggleOrphanResolved(resolved bool) (tea.Model, tea.Cmd) {
 	}
 	if err := m.saveComments(); err != nil {
 		m.statusMsg = fmt.Sprintf("error saving: %v", err)
-	} else {
-		if resolved {
-			m.statusMsg = "comment resolved"
-		} else {
-			m.statusMsg = "comment unresolved"
-		}
+		return m, nil
 	}
-	return m, nil
+	if resolved {
+		m.statusMsg = "comment resolved"
+	} else {
+		m.statusMsg = "comment unresolved"
+	}
+	return m, clearStatusCmd()
 }
 
 func (m *Model) saveComments() error {
@@ -905,15 +918,21 @@ func (m *Model) saveComments() error {
 	return diff.SaveComments(m.org, m.repoName, m.session.PRNumber, flat)
 }
 
-func (m *Model) toggleCommentResolved(id string, resolved bool) {
+func (m *Model) toggleCommentResolved(id string, resolved bool) tea.Cmd {
 	for _, c := range m.comments {
 		if c.ID == id {
 			c.Resolved = resolved
 			_ = m.saveComments()
 			m.rebuildDiffView()
-			return
+			if resolved {
+				m.statusMsg = "comment resolved"
+			} else {
+				m.statusMsg = "comment unresolved"
+			}
+			return clearStatusCmd()
 		}
 	}
+	return nil
 }
 
 // hunkLines finds the hunk for a comment and returns its rendered lines.
