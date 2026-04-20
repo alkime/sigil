@@ -69,12 +69,52 @@ sigil reply-comment file.md 1 "Fixed the typo, see updated text."
 sigil generate-skill > SKILL.md
 ` + "```" + `
 
-## Typical LLM Workflow
+## Typical LLM Workflow (Markdown mode)
 
 1. Read open comments: ` + "`sigil get-comments --open file.md`" + `
 2. Address each comment by editing the Markdown content.
 3. Reply to confirm the change: ` + "`sigil reply-comment file.md <id> \"Done — updated wording.\"`" + `
 4. Resolve when finished: ` + "`sigil resolve-comments file.md <id>`" + `
+
+## PR Review Mode (sigil diff)
+
+Sigil also supports reviewing GitHub PRs. Comments are stored locally and anchored
+to diff context so they survive force-pushes and rebases.
+
+### Invocation
+
+` + "```" + `bash
+cd my-repo
+git checkout feature/x
+sigil diff                  # open TUI (requires gh CLI)
+` + "```" + `
+
+### Diff subcommands
+
+` + "```" + `bash
+# Read all PR comments (default: current branch's open PR)
+sigil diff get-comments
+sigil diff get-comments --open
+sigil diff get-comments --resolved
+sigil diff get-comments --session <id>   # explicit session
+
+# Reply to a comment
+sigil diff reply-comment <comment-id> "addressed in latest commit"
+
+# Resolve / unresolve
+sigil diff resolve-comments <comment-id>
+sigil diff unresolve-comments <comment-id>
+` + "```" + `
+
+### Typical agent workflow (PR mode)
+
+1. ` + "`sigil diff get-comments --open`" + ` — read all open review comments
+2. Address each comment by editing source files
+3. ` + "`sigil diff reply-comment <id> \"Fixed\"`" + ` — acknowledge the change
+4. ` + "`sigil diff resolve-comments <id>`" + ` — mark resolved
+
+Session auto-detection uses git context: run any ` + "`sigil diff`" + ` subcommand from any
+worktree and it finds the right PR automatically.
 
 ## Comment Format
 
