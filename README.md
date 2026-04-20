@@ -167,6 +167,49 @@ Standard Docker-based deployment to fly.io.
 -->
 ```
 
+## PR Review with sigil diff
+
+Review GitHub pull requests directly in the terminal. Comments are stored locally and survive force-pushes via context anchoring.
+
+```bash
+cd my-repo
+git checkout feature/x
+
+sigil diff                                          # open TUI for the open PR on this branch
+sigil diff get-comments                             # plain-text dump for LLM consumption
+sigil diff get-comments --open                      # only unresolved comments
+sigil diff reply-comment <id> "fixed in next push"  # append a reply
+sigil diff resolve-comments <id>                    # mark resolved
+sigil diff unresolve-comments <id>                  # reopen
+```
+
+### TUI keybindings
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓`, `k` / `↑` | Navigate lines |
+| `J` / `K` | Jump between hunks |
+| `Tab` | Next file |
+| `n` / `N` | Next / prev comment |
+| `c` | Add comment on focused line |
+| `r` | Toggle resolve on focused comment |
+| `o` | Cycle through orphaned comments |
+| `?` | Toggle keybinding help |
+| `q` | Quit |
+
+### Requirements
+
+`gh` CLI must be installed and authenticated (`gh auth login`). Comments are stored under `$XDG_DATA_HOME/sigil/diffs/` (default: `~/.local/share/sigil/diffs/`).
+
+### LLM agent workflow
+
+```
+Human: sigil diff          → reviews PR, adds comments with c
+Agent:  sigil diff get-comments → reads comments, addresses them
+Agent:  sigil diff reply-comment <id> "done"
+Agent:  sigil diff resolve-comments <id>
+```
+
 ## LLM Workflow
 
 1. LLM generates a Markdown document
