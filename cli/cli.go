@@ -12,6 +12,7 @@ import (
 type CLI struct {
 	Version kong.VersionFlag `help:"Print version and exit." short:"V"`
 
+	Diff              DiffCmd              `cmd:"" name:"diff" help:"Local-first PR review TUI and agent interface."`
 	GetComments       GetCommentsCmd       `cmd:"" name:"get-comments" help:"Print comments from a Markdown file as JSON."`
 	ResolveComments   ResolveCommentsCmd   `cmd:"" name:"resolve-comments" aliases:"resolve-comment" help:"Mark comments as resolved."`
 	UnresolveComments UnresolveCommentsCmd `cmd:"" name:"unresolve-comments" aliases:"unresolve-comment" help:"Mark comments as unresolved."`
@@ -23,6 +24,9 @@ type CLI struct {
 // CLIContext carries shared dependencies for all subcommands.
 type CLIContext struct {
 	Out io.Writer
+	// DiffSession and DiffDraft are populated by DiffCmd.AfterApply for sub-subcommands.
+	DiffSession string
+	DiffDraft   bool
 }
 
 // NormalizeID converts a bare integer or short string into a zero-padded
