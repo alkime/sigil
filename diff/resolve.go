@@ -37,12 +37,6 @@ type ErrPickerNeeded struct {
 
 func (e *ErrPickerNeeded) Error() string { return "multiple PRs found — picker required" }
 
-// ParsedDiff holds the raw unified diff bytes for a snapshot.
-type ParsedDiff struct {
-	Raw         []byte
-	SnapshotDir string
-}
-
 type snapshotMeta struct {
 	ObservedAt        time.Time `yaml:"observed_at"`
 	Branch            string    `yaml:"branch"`
@@ -223,7 +217,7 @@ func captureSnapshot(ctx context.Context, session *Session, c PRCandidate, org, 
 	snap := Snapshot{Base: baseSHA, Head: headSHA, ObservedAt: meta.ObservedAt}
 	session.Snapshots = append(session.Snapshots, snap)
 
-	return &ParsedDiff{Raw: diffBytes, SnapshotDir: snapDir}, nil
+	return Parse(diffBytes)
 }
 
 func loadLatestSnapshotDiff(session *Session, org, repoName string) (*ParsedDiff, error) {
@@ -235,11 +229,11 @@ func loadLatestSnapshotDiff(session *Session, org, repoName string) (*ParsedDiff
 	diffBytes, err := os.ReadFile(filepath.Join(snapDir, "diff.patch"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &ParsedDiff{SnapshotDir: snapDir}, nil
+			return &ParsedDiff{}, nil
 		}
 		return nil, fmt.Errorf("read diff.patch: %w", err)
 	}
-	return &ParsedDiff{Raw: diffBytes, SnapshotDir: snapDir}, nil
+	return Parse(diffBytes)
 }
 
 func loadSessionByID(ctx context.Context, id string) (*Session, *ParsedDiff, error) {

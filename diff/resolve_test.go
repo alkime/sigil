@@ -118,13 +118,15 @@ func TestResolve_newSession(t *testing.T) {
 	if session.ID == "" {
 		t.Error("session ID should not be empty")
 	}
-	if pd == nil || len(pd.Raw) == 0 {
+	if pd == nil || len(pd.Files) == 0 {
 		t.Error("expected non-empty diff")
 	}
-	if _, err := os.Stat(filepath.Join(pd.SnapshotDir, "diff.patch")); err != nil {
+	snap := session.Snapshots[0]
+	snapDir := SnapshotDir("testorg", "testrepo", session.PRNumber, snap.Base, snap.Head)
+	if _, err := os.Stat(filepath.Join(snapDir, "diff.patch")); err != nil {
 		t.Errorf("diff.patch missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(pd.SnapshotDir, "meta.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(snapDir, "meta.yaml")); err != nil {
 		t.Errorf("meta.yaml missing: %v", err)
 	}
 	if len(session.Snapshots) != 1 {
