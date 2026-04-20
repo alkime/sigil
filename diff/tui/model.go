@@ -425,7 +425,7 @@ func (m Model) buildView() string {
 	}
 
 	if len(m.files) > 0 {
-		parts = append(parts, renderFileList(m.files, m.fileIdx, m.width))
+		parts = append(parts, renderFileList(m.files, m.fileIdx, m.commentCountsByFile(), m.width))
 		parts = append(parts, separatorStyle.Render(strings.Repeat("─", m.width)))
 	}
 
@@ -879,6 +879,16 @@ func (m Model) hunkLines(c *diff.Comment) []string {
 		}
 	}
 	return nil
+}
+
+func (m Model) commentCountsByFile() map[string]int {
+	counts := make(map[string]int)
+	for _, c := range m.comments {
+		if !c.Orphaned {
+			counts[c.File]++
+		}
+	}
+	return counts
 }
 
 func (m Model) findComment(id string) *diff.Comment {

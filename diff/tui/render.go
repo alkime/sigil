@@ -177,7 +177,7 @@ func renderHeader(session *diff.Session, fileCount int) string {
 // renderFileList renders the file navigation list.
 const maxVisibleFiles = 5
 
-func renderFileList(files []diff.ParsedFile, fileIdx int, width int) string {
+func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int) string {
 	var sb strings.Builder
 
 	// Compute a window of up to maxVisibleFiles centred on fileIdx.
@@ -209,10 +209,16 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, width int) string {
 			stats += " (no line context)"
 		}
 
+		n := commentCounts[name]
+		var dot string
+		if n > 0 {
+			dot = commentMarkStyle.Render(fmt.Sprintf(" ●%d", n))
+		}
+
 		if i == fileIdx {
-			sb.WriteString(fileActiveStyle.Render("  ▸ " + name + stats))
+			sb.WriteString(fileActiveStyle.Render("  ▸ "+name+stats) + dot)
 		} else {
-			sb.WriteString(fileStyle.Render("    " + name + stats))
+			sb.WriteString(fileStyle.Render("    "+name+stats) + dot)
 		}
 		sb.WriteByte('\n')
 	}
@@ -221,7 +227,6 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, width int) string {
 	if len(files) > maxVisibleFiles {
 		sb.WriteString(fileStyle.Render(fmt.Sprintf("    %d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))))
 	} else {
-		// Remove trailing newline added in the loop above.
 		s := sb.String()
 		return strings.TrimRight(s, "\n")
 	}
