@@ -1,6 +1,6 @@
 ---
 id: sig-n6x6
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-04-20T19:25:44Z

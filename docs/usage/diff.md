@@ -24,23 +24,26 @@ found across worktrees, a picker lets you select which one to review.
 ┌─────────────────────────────────────────────────────────────────┐
 │  sigil diff  ·  org/repo  ·  PR #42  ·  3 files                │  ← header
 ├─────────────────────────────────────────────────────────────────┤
+│    ◉ PR Comments                                                │  ← virtual entry
+│    ─────────────────                                            │
 │  ▸ internal/auth/oidc.go (+42 -8)                               │  ← file list
 │    internal/auth/token.go (+5 -0)                               │
 │    internal/middleware/auth.go (+12 -3)                         │
+│  1/3 files  (Tab/S-Tab to navigate)                             │
 ├─────────────────────────────────────────────────────────────────┤
-▶  42     if err != nil {                                          │  ← diff viewport
-    43     return nil, err                                         │
-    44  +  return token, nil                                       │
-    45     }                                                       │
-                                                                   │
-    ●  james: should we be logging the token type?                 │  ← inline comment
+│   42     if err != nil {                                        │  ← diff viewport
+│   43     return nil, err                                        │  (focused line has
+│   44  +  return token, nil                                      │   subtle bg highlight)
+│   45     }                                                      │
+│                                                                 │
+│   ●  james: should we be logging the token type?               │  ← inline comment
 ├─────────────────────────────────────────────────────────────────┤
-│  [c] add comment  [r] resolve  [n] next  [N] prev  [?] help     │  ← key bar
+│  [enter/c] comment  [r/u] resolve/unresolve  [n] next  [?] help │  ← key bar
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The `▶` gutter marker shows the focused line. Inline comments appear below
-their anchored line with `●`.
+The focused line is highlighted with a subtle full-row background. Inline
+comments appear below their anchored line with `●`.
 
 ## Keybindings
 
@@ -48,10 +51,11 @@ their anchored line with `●`.
 |-----|--------|
 | `j` / `↓`, `k` / `↑` | Move focused line |
 | `J` / `K` | Jump to next / prev hunk |
-| `Tab` | Cycle to next file |
+| `Tab` / `Shift+Tab` | Cycle to next / prev file (includes PR Comments entry) |
 | `n` / `N` | Jump to next / prev comment |
-| `c` | Add comment on focused line |
-| `r` | Toggle resolve on focused comment (stub in v1) |
+| `c` | Add inline comment on focused line; in PR Comments view, add a PR-level comment |
+| `Enter` | Open inspect modal for comment under cursor |
+| `r` / `u` | Resolve / unresolve focused comment |
 | `o` | Review orphaned comments |
 | `?` | Toggle keybinding help |
 | `q` | Quit |
@@ -73,6 +77,19 @@ The comment is immediately written to `comments.yaml` under a file lock.
   └────────────────────────────────────────────────────┘
   Ctrl+S to submit  ·  Esc to cancel
 ```
+
+## PR-Level Comments
+
+Not all feedback belongs on a specific line. The file list always includes a
+virtual **PR Comments** entry (shown with `◉`) above the file list. Navigate
+to it with `Shift+Tab` from the first file, or `Tab` from the last.
+
+While the PR Comments view is active, press `c` to add a top-level comment
+with no file or line anchor. Existing PR-level comments are listed in the
+viewport; press `Enter` on any one to edit it.
+
+PR-level comments appear in `sigil diff get-comments` output with an empty
+`File` field and are never marked orphaned.
 
 ## Orphaned Comments
 

@@ -17,6 +17,15 @@ import (
 	"github.com/alkime/sigil/diff"
 )
 
+type clearStatusMsg struct{}
+
+func clearStatusCmd() tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(2 * time.Second)
+		return clearStatusMsg{}
+	}
+}
+
 // Mode represents the current UI mode.
 type Mode int
 
@@ -108,6 +117,10 @@ func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case clearStatusMsg:
+		m.statusMsg = ""
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -199,12 +212,19 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
 			return m.enterInspectMode(m.linesMeta[fl].commentID)
 		}
+		if m.fileIdx == -1 {
+			return m.enterPRCommentMode()
+		}
 		if len(m.files) == 0 || !m.files[m.fileIdx].IsCommentable() {
 			return m, nil
 		}
 		return m.enterCommentMode()
 
 	case "c":
+		if m.fileIdx == -1 {
+			// In the PR Comments view, lowercase c also opens a PR-level comment.
+			return m.enterPRCommentMode()
+		}
 		if len(m.files) == 0 {
 			return m, nil
 		}
@@ -216,13 +236,13 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
-			m.toggleCommentResolved(m.linesMeta[fl].commentID, true)
+			return m, m.toggleCommentResolved(m.linesMeta[fl].commentID, true)
 		}
 		return m, nil
 
 	case "u":
 		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
-			m.toggleCommentResolved(m.linesMeta[fl].commentID, false)
+			return m, m.toggleCommentResolved(m.linesMeta[fl].commentID, false)
 		}
 		return m, nil
 
@@ -267,11 +287,11 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if err := m.submitComment(body); err != nil {
 			m.statusMsg = fmt.Sprintf("error saving comment: %v", err)
-		} else {
-			m.statusMsg = "comment added"
+			return m, nil
 		}
+		m.statusMsg = "comment added"
 		m.mode = ModeNormal
-		return m, nil
+		return m, clearStatusCmd()
 	}
 
 	var cmd tea.Cmd
@@ -332,13 +352,13 @@ func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if err := m.saveComments(); err != nil {
 			m.statusMsg = fmt.Sprintf("error saving: %v", err)
-		} else {
-			m.statusMsg = "comment updated"
+			return m, nil
 		}
+		m.statusMsg = "comment updated"
 		m.mode = ModeNormal
 		m.inspectID = ""
 		m.rebuildDiffView()
-		return m, nil
+		return m, clearStatusCmd()
 
 	case "tab":
 		m.inspectHunkFocus = !m.inspectHunkFocus
@@ -424,23 +444,17 @@ func (m Model) buildView() string {
 		parts = append(parts, banner)
 	}
 
-	if len(m.files) > 0 {
-		parts = append(parts, renderFileList(m.files, m.fileIdx, m.commentCountsByFile(), m.width))
-		parts = append(parts, separatorStyle.Render(strings.Repeat("─", m.width)))
-	}
+	parts = append(parts, renderFileList(m.files, m.fileIdx, m.commentCountsByFile(), m.width))
+	parts = append(parts, separatorStyle.Render(strings.Repeat("─", m.width)))
 
-	// Build a viewport copy with the current gutter function.
 	vp := m.viewport
 	fl := m.focusedLine
-	lm := m.linesMeta
-	vp.LeftGutterFunc = func(ctx viewport.GutterContext) string {
-		if ctx.Soft || ctx.Index >= len(lm) {
-			return "   "
+	w := m.width
+	vp.StyleLineFunc = func(idx int) lipgloss.Style {
+		if idx == fl {
+			return selectionStyle.Width(w)
 		}
-		if ctx.Index == fl {
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true).Render("▶") + " "
-		}
-		return "   "
+		return lipgloss.NewStyle()
 	}
 
 	switch m.mode {
@@ -460,9 +474,28 @@ func (m Model) buildView() string {
 }
 
 
-// rebuildDiffView rebuilds the viewport content for the current file.
+// rebuildDiffView rebuilds the viewport content for the current file (or PR Comments view).
 func (m *Model) rebuildDiffView() {
-	if m.width == 0 || len(m.files) == 0 {
+	if m.width == 0 {
+		return
+	}
+
+	vpH := m.viewportHeight()
+	m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(vpH))
+	m.viewport.KeyMap.Up.SetEnabled(false)
+	m.viewport.KeyMap.Down.SetEnabled(false)
+
+	if m.fileIdx == -1 {
+		result := renderPRComments(m.comments, m.width)
+		m.viewport.SetContent(result.content)
+		m.linesMeta = result.linesMeta
+		m.hunkStarts = nil
+		m.commentPositions = nil
+		m.focusedLine = 0
+		return
+	}
+
+	if len(m.files) == 0 {
 		return
 	}
 
@@ -477,12 +510,7 @@ func (m *Model) rebuildDiffView() {
 		m.focusedLine = len(m.linesMeta) - 1
 	}
 
-	vpH := m.viewportHeight()
-	m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(vpH))
-	m.viewport.KeyMap.Up.SetEnabled(false)
-	m.viewport.KeyMap.Down.SetEnabled(false)
 	m.viewport.SetContent(result.content)
-
 	m.ensureLineVisible()
 }
 
@@ -492,9 +520,7 @@ func (m *Model) viewportHeight() int {
 	}
 	overhead := 2 // header + keybar
 	overhead += fileListHeight(len(m.files))
-	if len(m.files) > 0 {
-		overhead++ // separator
-	}
+	overhead++ // separator (always present alongside the file list)
 	if len(m.orphans) > 0 && m.mode != ModeOrphan {
 		overhead++ // orphan banner
 	}
@@ -506,13 +532,16 @@ func (m *Model) viewportHeight() int {
 }
 
 func fileListHeight(fileCount int) int {
-	if fileCount == 0 {
-		return 0
+	// Always includes the virtual "PR Comments" entry (+1) and its separator (+1).
+	total := fileCount + 1
+	visible := total
+	if visible > maxVisibleFiles {
+		visible = maxVisibleFiles
 	}
-	if fileCount > maxVisibleFiles {
-		return maxVisibleFiles + 1 // visible entries + overflow hint
+	if total >= 2 {
+		return visible + 2 // entries + separator + nav hint
 	}
-	return fileCount
+	return visible + 1 // entry + separator
 }
 
 func (m *Model) moveLine(delta int) {
@@ -585,7 +614,13 @@ func (m *Model) cycleFile(delta int) {
 	if len(m.files) == 0 {
 		return
 	}
-	m.fileIdx = (m.fileIdx + delta + len(m.files)) % len(m.files)
+	// Virtual index -1 is the "PR Comments" entry before index 0.
+	// Total entries = len(m.files) + 1 (the PR Comments entry).
+	total := len(m.files) + 1
+	// Shift to a 0-based range where 0 = PR Comments, 1..N = files 0..N-1.
+	current := m.fileIdx + 1
+	next := (current + delta + total) % total
+	m.fileIdx = next - 1
 	m.focusedLine = 0
 	m.rebuildDiffView()
 }
@@ -651,7 +686,53 @@ func (m Model) enterCommentMode() (tea.Model, tea.Cmd) {
 	return m, m.commentTA.Focus()
 }
 
+// enterPRCommentMode opens the comment textarea for a PR-level comment (no line anchor).
+func (m Model) enterPRCommentMode() (tea.Model, tea.Cmd) {
+	ta := textarea.New()
+	ta.Placeholder = "Enter PR-level comment... (Ctrl+S to submit, Esc to cancel)"
+	taW := m.width - 8
+	if taW > 80 {
+		taW = 80
+	}
+	ta.SetWidth(taW)
+	ta.SetHeight(5)
+
+	m.commentTA = ta
+	m.commentFileIdx = -1
+	m.commentHunkIdx = -1
+	m.commentSide = diff.Right
+	m.mode = ModeComment
+
+	return m, m.commentTA.Focus()
+}
+
 func (m *Model) submitComment(body string) error {
+	// PR-level comment: no file or line anchor.
+	if m.commentFileIdx == -1 {
+		c := diff.Comment{
+			ID:          newUUID(),
+			File:        "",
+			HunkHeader:  "",
+			LineHint:    0,
+			Side:        "",
+			Context:     diff.CommentContext{},
+			Body:        body,
+			Author:      resolveAuthor(),
+			CreatedAt:   time.Now().UTC(),
+			UpdatedAt:   time.Now().UTC(),
+			Resolved:    false,
+			Orphaned:    false,
+			SnapshotRef: currentSnapshotRef(m.session),
+		}
+		m.comments = append(m.comments, &c)
+		if err := m.saveComments(); err != nil {
+			m.comments = m.comments[:len(m.comments)-1]
+			return err
+		}
+		m.rebuildDiffView()
+		return nil
+	}
+
 	if m.commentFileIdx >= len(m.files) {
 		return fmt.Errorf("invalid file index")
 	}
@@ -815,14 +896,14 @@ func (m Model) toggleOrphanResolved(resolved bool) (tea.Model, tea.Cmd) {
 	}
 	if err := m.saveComments(); err != nil {
 		m.statusMsg = fmt.Sprintf("error saving: %v", err)
-	} else {
-		if resolved {
-			m.statusMsg = "comment resolved"
-		} else {
-			m.statusMsg = "comment unresolved"
-		}
+		return m, nil
 	}
-	return m, nil
+	if resolved {
+		m.statusMsg = "comment resolved"
+	} else {
+		m.statusMsg = "comment unresolved"
+	}
+	return m, clearStatusCmd()
 }
 
 func (m *Model) saveComments() error {
@@ -833,15 +914,21 @@ func (m *Model) saveComments() error {
 	return diff.SaveComments(m.org, m.repoName, m.session.PRNumber, flat)
 }
 
-func (m *Model) toggleCommentResolved(id string, resolved bool) {
+func (m *Model) toggleCommentResolved(id string, resolved bool) tea.Cmd {
 	for _, c := range m.comments {
 		if c.ID == id {
 			c.Resolved = resolved
 			_ = m.saveComments()
 			m.rebuildDiffView()
-			return
+			if resolved {
+				m.statusMsg = "comment resolved"
+			} else {
+				m.statusMsg = "comment unresolved"
+			}
+			return clearStatusCmd()
 		}
 	}
+	return nil
 }
 
 // hunkLines finds the hunk for a comment and returns its rendered lines.

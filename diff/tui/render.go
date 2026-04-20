@@ -25,12 +25,15 @@ var (
 	commentMarkStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
 	resolvedMarkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#669966"))
 	headerStyle       = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#EEEEEE")).Bold(true)
-	fileActiveStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
-	fileStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	fileActiveStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+	fileStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	prCommentsStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
+	prCommentsActiveStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00")).Bold(true)
 	fileNavHintStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#AAAAAA")).Bold(true)
 	keyHintKeyStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
 	keyHintDescStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA"))
 	separatorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#333333"))
+	selectionStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#3A3A6A"))
 	statusMsgStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
 	orphanBannerStyle = lipgloss.NewStyle().Background(lipgloss.Color("#3A1A00")).Foreground(lipgloss.Color("#FFAA00")).Bold(true)
 	helpTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
@@ -176,62 +179,135 @@ func renderHeader(session *diff.Session, fileCount int) string {
 }
 
 // renderFileList renders the file navigation list.
+// fileIdx == -1 means the virtual "PR Comments" entry is active.
 const maxVisibleFiles = 5
 
 func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int) string {
+	// Build a unified slice of entries: index 0 = PR Comments (virtual), 1..N = files 0..N-1.
+	// We use the unified index (uIdx) for windowing.
+	total := len(files) + 1 // +1 for the PR Comments entry
+	uIdx := fileIdx + 1      // unified index: PR Comments = 0, file i = i+1
+
 	var sb strings.Builder
 
-	// Compute a window of up to maxVisibleFiles centred on fileIdx.
-	start := fileIdx - maxVisibleFiles/2
+	// Compute a window of up to maxVisibleFiles centred on uIdx.
+	start := uIdx - maxVisibleFiles/2
 	if start < 0 {
 		start = 0
 	}
 	end := start + maxVisibleFiles
-	if end > len(files) {
-		end = len(files)
+	if end > total {
+		end = total
 		start = end - maxVisibleFiles
 		if start < 0 {
 			start = 0
 		}
 	}
 
-	for i := start; i < end; i++ {
-		f := files[i]
-		name := f.NewPath
-		if f.IsDelete {
-			name = f.OldPath
-		}
-		added, deleted := fileStats(f)
-		var stats string
-		if added > 0 || deleted > 0 {
-			stats = fmt.Sprintf(" (+%d -%d)", added, deleted)
-		}
-		if !f.IsCommentable() {
-			stats += " (no line context)"
-		}
-
-		n := commentCounts[name]
-		var dot string
-		if n > 0 {
-			dot = commentMarkStyle.Render(fmt.Sprintf(" ●%d", n))
-		}
-
-		if i == fileIdx {
-			sb.WriteString(fileActiveStyle.Render("  ▸ "+name+stats) + dot)
+	for u := start; u < end; u++ {
+		if u == 0 {
+			// PR Comments virtual entry.
+			n := commentCounts[""]
+			var dot string
+			if n > 0 {
+				dot = commentMarkStyle.Render(fmt.Sprintf(" ●%d", n))
+			}
+			if uIdx == 0 {
+				sb.WriteString(prCommentsActiveStyle.Render("  ▸ ◉ PR Comments") + dot)
+			} else {
+				sb.WriteString(prCommentsStyle.Render("    ◉ PR Comments") + dot)
+			}
+			sb.WriteByte('\n')
+			sb.WriteString(fileStyle.Render("    ─────────────────"))
 		} else {
-			sb.WriteString(fileStyle.Render("    "+name+stats) + dot)
+			i := u - 1
+			f := files[i]
+			name := f.NewPath
+			if f.IsDelete {
+				name = f.OldPath
+			}
+			added, deleted := fileStats(f)
+			var stats string
+			if added > 0 || deleted > 0 {
+				stats = fmt.Sprintf(" (+%d -%d)", added, deleted)
+			}
+			if !f.IsCommentable() {
+				stats += " (no line context)"
+			}
+
+			n := commentCounts[name]
+			var dot string
+			if n > 0 {
+				dot = commentMarkStyle.Render(fmt.Sprintf(" ●%d", n))
+			}
+
+			if u == uIdx {
+				sb.WriteString(fileActiveStyle.Render("  ▸ "+name+stats) + dot)
+			} else {
+				sb.WriteString(fileStyle.Render("    "+name+stats) + dot)
+			}
 		}
 		sb.WriteByte('\n')
 	}
 
-	// Show overflow hint if files don't all fit.
-	if len(files) > maxVisibleFiles {
-		sb.WriteString(fileNavHintStyle.Render(fmt.Sprintf("  %d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))))
+	if total >= 2 {
+		// Display position: PR Comments = 0, files start at 1.
+		// Show "PR" for the virtual entry, otherwise the file number.
+		var pos string
+		if uIdx == 0 {
+			pos = fmt.Sprintf("PR/%d files  (Tab/S-Tab to navigate)", len(files))
+		} else {
+			pos = fmt.Sprintf("%d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))
+		}
+		sb.WriteString(fileNavHintStyle.Render("  " + pos))
 	} else {
 		s := sb.String()
 		return strings.TrimRight(s, "\n")
 	}
 	return sb.String()
+}
+
+// renderPRComments renders all PR-level comments (File == "") and returns
+// content + linesMeta so Enter can open the inspect modal on any comment line.
+func renderPRComments(comments []*diff.Comment, width int) diffRenderResult {
+	var prComments []*diff.Comment
+	for _, c := range comments {
+		if c.File == "" && !c.Orphaned {
+			prComments = append(prComments, c)
+		}
+	}
+
+	if len(prComments) == 0 {
+		return diffRenderResult{content: keyHintDescStyle.Render("  No PR-level comments yet. Press c to add one.")}
+	}
+
+	var lines []string
+	var meta []lineInfo
+	for _, c := range prComments {
+		var marker string
+		if c.Resolved {
+			marker = resolvedMarkStyle.Render("  ● ")
+		} else {
+			marker = commentMarkStyle.Render("  ● ")
+		}
+		author := commentMarkStyle.Render(c.Author + ": ")
+		status := ""
+		if c.Resolved {
+			status = resolvedMarkStyle.Render(" [resolved]")
+		}
+		header := marker + author + keyHintDescStyle.Render(c.CreatedAt.Format("2006-01-02 15:04")) + status
+		commentLine := lineInfo{isComment: true, commentID: c.ID}
+		lines = append(lines, header)
+		meta = append(meta, commentLine)
+		for _, bodyLine := range strings.Split(c.Body, "\n") {
+			lines = append(lines, "      "+contextStyle.Render(bodyLine))
+			meta = append(meta, commentLine)
+		}
+		lines = append(lines, "")
+		meta = append(meta, lineInfo{})
+	}
+
+	return diffRenderResult{content: strings.Join(lines, "\n"), linesMeta: meta}
 }
 
 // renderKeyBar renders the bottom key hint bar.
