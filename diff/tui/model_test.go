@@ -424,14 +424,15 @@ func TestNavigation_PRComments_view(t *testing.T) {
 	}
 }
 
-func TestPRComment_C_keybinding_entersModeComment(t *testing.T) {
+func TestPRComment_c_in_PRCommentsView_entersModeComment(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	m := setupModel(t)
 
-	// C in normal mode (on any file) should enter ModeComment.
-	m2 := send(m, "C").(dtui.Model)
+	// Navigate to PR Comments view, then c should enter ModeComment.
+	m1 := send(m, "shift+tab").(dtui.Model)
+	m2 := send(m1, "c").(dtui.Model)
 	if m2.CurrentMode() != dtui.ModeComment {
-		t.Errorf("C should enter ModeComment: mode = %d", m2.CurrentMode())
+		t.Errorf("c in PR Comments view should enter ModeComment: mode = %d", m2.CurrentMode())
 	}
 }
 
@@ -446,10 +447,11 @@ func TestPRComment_submitPersists(t *testing.T) {
 
 	m := setupModel(t)
 
-	// Press C to open PR-level comment modal.
-	m2 := send(m, "C").(dtui.Model)
+	// Navigate to PR Comments view then press c to open modal.
+	m1 := send(m, "shift+tab").(dtui.Model)
+	m2 := send(m1, "c").(dtui.Model)
 	if m2.CurrentMode() != dtui.ModeComment {
-		t.Fatalf("C should enter ModeComment: mode = %d", m2.CurrentMode())
+		t.Fatalf("c in PR Comments view should enter ModeComment: mode = %d", m2.CurrentMode())
 	}
 
 	// Type a PR-level comment body.

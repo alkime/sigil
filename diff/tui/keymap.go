@@ -13,7 +13,6 @@ type KeyMap struct {
 	NextComment    key.Binding
 	PrevComment    key.Binding
 	Comment        key.Binding
-	PRComment      key.Binding
 	Resolve        key.Binding
 	OrphanCycle    key.Binding
 	Quit           key.Binding
@@ -32,7 +31,6 @@ func DefaultKeyMap() KeyMap {
 		NextComment: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next comment")),
 		PrevComment: key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev comment")),
 		Comment:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "add comment")),
-		PRComment:   key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "PR-level comment")),
 		Resolve:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "resolve")),
 		OrphanCycle: key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "orphan review")),
 		Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),

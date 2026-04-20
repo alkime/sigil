@@ -220,9 +220,6 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.enterCommentMode()
 
-	case "C":
-		return m.enterPRCommentMode()
-
 	case "c":
 		if m.fileIdx == -1 {
 			// In the PR Comments view, lowercase c also opens a PR-level comment.

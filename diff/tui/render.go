@@ -278,7 +278,7 @@ func renderPRComments(comments []*diff.Comment, width int) diffRenderResult {
 	}
 
 	if len(prComments) == 0 {
-		return diffRenderResult{content: keyHintDescStyle.Render("  No PR-level comments yet. Press C to add one.")}
+		return diffRenderResult{content: keyHintDescStyle.Render("  No PR-level comments yet. Press c to add one.")}
 	}
 
 	var lines []string
@@ -317,7 +317,6 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 	case ModeNormal:
 		hints = []string{
 			keyHintRaw("enter/c", "comment"),
-			keyHint(km.PRComment),
 			keyHintRaw("r/u", "resolve/unresolve"),
 			keyHint(km.NextComment),
 			keyHint(km.PrevComment),
@@ -435,7 +434,6 @@ func renderHelp(km KeyMap, width, height int) string {
 		{km.NextComment.Help().Key, km.NextComment.Help().Desc},
 		{km.PrevComment.Help().Key, km.PrevComment.Help().Desc},
 		{km.Comment.Help().Key, km.Comment.Help().Desc},
-		{km.PRComment.Help().Key, km.PRComment.Help().Desc},
 		{km.Resolve.Help().Key, km.Resolve.Help().Desc},
 		{km.OrphanCycle.Help().Key, km.OrphanCycle.Help().Desc},
 		{km.Quit.Help().Key, km.Quit.Help().Desc},
