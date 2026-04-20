@@ -138,6 +138,10 @@ func ReAnchor(comment *Comment, newDiff *ParsedDiff) (matched bool, newLineHint 
 func MarkOrphans(comments []*Comment, newDiff *ParsedDiff) []string {
 	var orphanedIDs []string
 	for _, c := range comments {
+		if c.File == "" {
+			c.Orphaned = false
+			continue
+		}
 		wasOrphaned := c.Orphaned
 		matched, lineHint, hunkHeader := ReAnchor(c, newDiff)
 		if matched {

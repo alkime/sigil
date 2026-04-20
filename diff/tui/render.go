@@ -218,7 +218,7 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 				sb.WriteString(prCommentsStyle.Render("    ◉ PR Comments") + dot)
 			}
 			sb.WriteByte('\n')
-			sb.WriteString(separatorStyle.Render("    · · ·"))
+			sb.WriteString(fileNavHintStyle.Render("    ─────────────────"))
 		} else {
 			i := u - 1
 			f := files[i]
