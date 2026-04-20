@@ -9,6 +9,7 @@ type KeyMap struct {
 	HunkUp      key.Binding
 	HunkDown    key.Binding
 	NextFile    key.Binding
+	PrevFile    key.Binding
 	NextComment key.Binding
 	PrevComment key.Binding
 	Comment     key.Binding
@@ -25,7 +26,8 @@ func DefaultKeyMap() KeyMap {
 		Down:        key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "line down")),
 		HunkUp:      key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "prev hunk")),
 		HunkDown:    key.NewBinding(key.WithKeys("J"), key.WithHelp("J", "next hunk")),
-		NextFile:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "next file")),
+		NextFile:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab/S-Tab", "next/prev file")),
+		PrevFile:    key.NewBinding(key.WithKeys("shift+tab")),
 		NextComment: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next comment")),
 		PrevComment: key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev comment")),
 		Comment:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "add comment")),

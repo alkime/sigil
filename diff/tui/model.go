@@ -161,7 +161,11 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "tab":
-		m.cycleFile()
+		m.cycleFile(1)
+		return m, nil
+
+	case "shift+tab":
+		m.cycleFile(-1)
 		return m, nil
 
 	case "n":
@@ -369,11 +373,7 @@ func (m *Model) viewportHeight() int {
 		return 10
 	}
 	overhead := 2 // header + keybar
-	fileLines := len(m.files)
-	if fileLines > 5 {
-		fileLines = 5
-	}
-	overhead += fileLines
+	overhead += fileListHeight(len(m.files))
 	if len(m.files) > 0 {
 		overhead++ // separator
 	}
@@ -388,6 +388,16 @@ func (m *Model) viewportHeight() int {
 		h = 3
 	}
 	return h
+}
+
+func fileListHeight(fileCount int) int {
+	if fileCount == 0 {
+		return 0
+	}
+	if fileCount > maxVisibleFiles {
+		return maxVisibleFiles + 1 // visible entries + overflow hint
+	}
+	return fileCount
 }
 
 func (m *Model) moveLine(delta int) {
@@ -456,11 +466,11 @@ func (m *Model) jumpComment(delta int) {
 	m.ensureLineVisible()
 }
 
-func (m *Model) cycleFile() {
+func (m *Model) cycleFile(delta int) {
 	if len(m.files) == 0 {
 		return
 	}
-	m.fileIdx = (m.fileIdx + 1) % len(m.files)
+	m.fileIdx = (m.fileIdx + delta + len(m.files)) % len(m.files)
 	m.focusedLine = 0
 	m.rebuildDiffView()
 }
@@ -479,14 +489,20 @@ func (m *Model) ensureLineVisible() {
 }
 
 func (m Model) enterCommentMode() (tea.Model, tea.Cmd) {
+	if len(m.linesMeta) == 0 || len(m.files) == 0 {
+		return m, nil
+	}
 	fl := m.focusedLine
-	if fl >= len(m.linesMeta) || len(m.files) == 0 {
+	// Advance past hunk headers and inline comment lines to a real diff line.
+	for fl < len(m.linesMeta) && (m.linesMeta[fl].isHunkHeader || m.linesMeta[fl].isComment) {
+		fl++
+	}
+	if fl >= len(m.linesMeta) {
+		m.statusMsg = "no commentable lines in this file"
 		return m, nil
 	}
+	m.focusedLine = fl
 	meta := m.linesMeta[fl]
-	if meta.isHunkHeader || meta.isComment {
-		return m, nil
-	}
 	if meta.hunkIdx < 0 || meta.hunkIdx >= len(m.files[m.fileIdx].Hunks) {
 		return m, nil
 	}

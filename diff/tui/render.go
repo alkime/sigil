@@ -173,9 +173,27 @@ func renderHeader(session *diff.Session, fileCount int) string {
 }
 
 // renderFileList renders the file navigation list.
+const maxVisibleFiles = 5
+
 func renderFileList(files []diff.ParsedFile, fileIdx int, width int) string {
 	var sb strings.Builder
-	for i, f := range files {
+
+	// Compute a window of up to maxVisibleFiles centred on fileIdx.
+	start := fileIdx - maxVisibleFiles/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxVisibleFiles
+	if end > len(files) {
+		end = len(files)
+		start = end - maxVisibleFiles
+		if start < 0 {
+			start = 0
+		}
+	}
+
+	for i := start; i < end; i++ {
+		f := files[i]
 		name := f.NewPath
 		if f.IsDelete {
 			name = f.OldPath
@@ -194,9 +212,16 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, width int) string {
 		} else {
 			sb.WriteString(fileStyle.Render("    " + name + stats))
 		}
-		if i < len(files)-1 {
-			sb.WriteByte('\n')
-		}
+		sb.WriteByte('\n')
+	}
+
+	// Show overflow hint if files don't all fit.
+	if len(files) > maxVisibleFiles {
+		sb.WriteString(fileStyle.Render(fmt.Sprintf("    %d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))))
+	} else {
+		// Remove trailing newline added in the loop above.
+		s := sb.String()
+		return strings.TrimRight(s, "\n")
 	}
 	return sb.String()
 }
