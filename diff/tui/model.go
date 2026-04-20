@@ -280,7 +280,7 @@ func (m Model) enterInspectMode(id string) (tea.Model, tea.Cmd) {
 	m.inspectID = id
 	m.inspectTA = ta
 	m.mode = ModeInspect
-	return m, ta.Focus()
+	return m, m.inspectTA.Focus()
 }
 
 func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
