@@ -184,14 +184,22 @@ func TestNavigation_Tab_cyclesFiles(t *testing.T) {
 		t.Fatalf("initial fileIdx = %d, want 0", m.FileIdx())
 	}
 
+	// Tab from file 0 → file 1.
 	m2 := send(m, "tab").(dtui.Model)
 	if m2.FileIdx() != 1 {
 		t.Errorf("after Tab: fileIdx = %d, want 1", m2.FileIdx())
 	}
 
+	// Tab from file 1 → PR Comments (virtual index -1).
 	m3 := send(m2, "tab").(dtui.Model)
-	if m3.FileIdx() != 0 {
-		t.Errorf("after second Tab: fileIdx = %d, want 0 (wrapped)", m3.FileIdx())
+	if m3.FileIdx() != -1 {
+		t.Errorf("after second Tab: fileIdx = %d, want -1 (PR Comments)", m3.FileIdx())
+	}
+
+	// Tab from PR Comments → file 0 (wrapped).
+	m4 := send(m3, "tab").(dtui.Model)
+	if m4.FileIdx() != 0 {
+		t.Errorf("after third Tab: fileIdx = %d, want 0 (wrapped back to first file)", m4.FileIdx())
 	}
 }
 
@@ -374,5 +382,105 @@ func TestView_rendersHeader(t *testing.T) {
 	}
 	if !strings.Contains(view, "PR #42") {
 		t.Error("view should contain PR number")
+	}
+}
+
+func TestView_rendersPRCommentsEntry(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := setupModel(t)
+	view := viewText(m)
+	if !strings.Contains(view, "PR Comments") {
+		t.Error("file list should always contain 'PR Comments' entry")
+	}
+}
+
+func TestNavigation_ShiftTab_fromFile0_goesPRComments(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := setupModel(t)
+
+	// Shift-Tab from file 0 should go to PR Comments (index -1).
+	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	m2m := m2.(dtui.Model)
+	if m2m.FileIdx() != -1 {
+		t.Errorf("Shift-Tab from file 0: fileIdx = %d, want -1 (PR Comments)", m2m.FileIdx())
+	}
+}
+
+func TestNavigation_PRComments_view(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := setupModel(t)
+
+	// Navigate to PR Comments view via Shift-Tab.
+	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	m2m := m2.(dtui.Model)
+	if m2m.FileIdx() != -1 {
+		t.Fatalf("expected fileIdx -1, got %d", m2m.FileIdx())
+	}
+
+	view := viewText(m2m)
+	// The PR Comments view should show a prompt since there are no PR-level comments yet.
+	if !strings.Contains(view, "No PR-level comments") {
+		t.Error("PR Comments view should show 'No PR-level comments' when empty")
+	}
+}
+
+func TestPRComment_C_keybinding_entersModeComment(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := setupModel(t)
+
+	// C in normal mode (on any file) should enter ModeComment.
+	m2 := send(m, "C").(dtui.Model)
+	if m2.CurrentMode() != dtui.ModeComment {
+		t.Errorf("C should enter ModeComment: mode = %d", m2.CurrentMode())
+	}
+}
+
+func TestPRComment_submitPersists(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", xdg)
+
+	sessionDir := diff.SessionDir("testorg", "testrepo", 42)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := setupModel(t)
+
+	// Press C to open PR-level comment modal.
+	m2 := send(m, "C").(dtui.Model)
+	if m2.CurrentMode() != dtui.ModeComment {
+		t.Fatalf("C should enter ModeComment: mode = %d", m2.CurrentMode())
+	}
+
+	// Type a PR-level comment body.
+	for _, r := range "pr level comment here" {
+		var tmp tea.Model
+		tmp, _ = m2.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m2 = tmp.(dtui.Model)
+	}
+
+	// Submit with Ctrl+S.
+	m3 := send(m2, "ctrl+s").(dtui.Model)
+	if m3.CurrentMode() != dtui.ModeNormal {
+		t.Errorf("ctrl+s should return to ModeNormal: mode = %d", m3.CurrentMode())
+	}
+
+	// Verify the comment was persisted with File == "".
+	comments, err := diff.LoadComments("testorg", "testrepo", 42)
+	if err != nil {
+		t.Fatalf("LoadComments: %v", err)
+	}
+	if len(comments) == 0 {
+		t.Fatal("expected at least one comment")
+	}
+	found := false
+	for _, c := range comments {
+		if c.File == "" && strings.Contains(c.Body, "pr level comment here") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected a PR-level comment (File='') with the submitted body")
 	}
 }
