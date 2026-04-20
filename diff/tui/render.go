@@ -234,6 +234,7 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 	case ModeNormal:
 		hints = []string{
 			keyHintRaw("enter/c", "comment"),
+			keyHintRaw("r/u", "resolve/unresolve"),
 			keyHint(km.NextComment),
 			keyHint(km.PrevComment),
 			keyHint(km.OrphanCycle),

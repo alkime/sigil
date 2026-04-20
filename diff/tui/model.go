@@ -208,7 +208,15 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.enterCommentMode()
 
 	case "r":
-		m.statusMsg = "not yet implemented"
+		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
+			m.toggleCommentResolved(m.linesMeta[fl].commentID, true)
+		}
+		return m, nil
+
+	case "u":
+		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
+			m.toggleCommentResolved(m.linesMeta[fl].commentID, false)
+		}
 		return m, nil
 
 	case "o":
@@ -787,6 +795,17 @@ func (m *Model) saveComments() error {
 		flat[i] = *c
 	}
 	return diff.SaveComments(m.org, m.repoName, m.session.PRNumber, flat)
+}
+
+func (m *Model) toggleCommentResolved(id string, resolved bool) {
+	for _, c := range m.comments {
+		if c.ID == id {
+			c.Resolved = resolved
+			_ = m.saveComments()
+			m.rebuildDiffView()
+			return
+		}
+	}
 }
 
 func (m Model) findComment(id string) *diff.Comment {
