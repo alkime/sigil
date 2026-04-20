@@ -6,11 +6,27 @@ Designed for human-in-the-loop review of LLM-generated content: review Markdown 
 
 ## Install
 
+### Prebuilt binaries
+
+Grab a tarball for your platform from the [releases page](https://github.com/alkime/sigil/releases/latest). Archives are named `sigil_<version>_<os>_<arch>.tar.gz` and ship for `darwin`/`linux` × `amd64`/`arm64`.
+
+```bash
+# example: macOS Apple Silicon
+tar -xzf sigil_<version>_darwin_arm64.tar.gz
+./sigil --version
+```
+
+`checksums.txt` is published alongside the archives — verify with `shasum -a 256 -c checksums.txt`.
+
+> On macOS, Gatekeeper will warn on first launch because the binary isn't signed yet. Right-click → Open, or run `xattr -d com.apple.quarantine ./sigil`.
+
+### From source
+
 ```bash
 go install github.com/alkime/sigil@latest
 ```
 
-Or build from source:
+Or:
 
 ```bash
 git clone https://github.com/alkime/sigil
@@ -20,25 +36,52 @@ go build .
 
 ## Usage
 
+### Interactive review (TUI)
+
 ```bash
 sigil <file.md>
 ```
 
-### Keybindings
+Opens the file in a Glamour-rendered viewport where you can navigate by content block, select line ranges, and attach review comments. Press `?` in-app for the current keybindings.
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | Navigate between content blocks |
-| `n` / `N` | Jump to next / previous comment |
+| `j` / `↓`, `k` / `↑` | Next / previous block |
+| `n` / `N` | Next / previous comment |
+| `x` | Toggle multi-block selection range |
 | `Enter` | Edit existing comment or add new one |
 | `r` | Resolve / reopen comment |
-| `d` | Delete comment (resolves first, then confirms) |
-| `Ctrl+S` | Save comment text (in edit modal) |
-| `Esc` | Close modal / cancel |
-| `d` / `u` | Half-page down / up (when not on comment) |
+| `d` | Delete resolved comment |
+| `Ctrl+d` / `Ctrl+u` | Half-page down / up |
+| `Shift+J` / `Shift+K` | Half-page down / up |
 | `g` / `G` | Top / bottom of file |
-| `?` | Show keybinding help |
+| `?` | Toggle keybinding help |
 | `q` | Quit |
+
+In the comment modal: `Ctrl+S` saves, `Esc` cancels.
+
+### Scripted / LLM-driven commands
+
+Sigil also exposes its review state over a CLI so LLMs and scripts can read and update comments without the TUI:
+
+```bash
+# Read comments as JSON (optionally filter by status)
+sigil get-comments file.md
+sigil get-comments --open file.md
+sigil get-comments --resolved file.md
+
+# Mark comments resolved / unresolved by ID
+sigil resolve-comments file.md 1 2 3
+sigil unresolve-comments file.md 1
+
+# Append a reply to a comment thread
+sigil reply-comment file.md 1 "Fixed — see updated wording."
+
+# Print version
+sigil --version
+```
+
+IDs can be passed as plain integers (`1`) or zero-padded (`0001`) — both resolve to the same comment.
 
 ## Comment Format
 
@@ -120,7 +163,25 @@ Standard Docker-based deployment to fly.io.
 4. LLM reads the ref markers and backmatter, updates the content, resolves comments
 5. Repeat until satisfied
 
-The format is designed to be natively consumable by LLMs — the comments are structured, machine-readable, and co-located with the content they reference.
+The format is designed to be natively consumable by LLMs — the comments are structured, machine-readable, and co-located with the content they reference. LLMs can drive the loop programmatically using the CLI subcommands above (`get-comments`, `reply-comment`, `resolve-comments`).
+
+### Installing the skill
+
+Sigil ships with a built-in skill document describing how LLM agents should use it. Print it to stdout and install it wherever your agent expects skill files:
+
+```bash
+# Claude Code, for example
+mkdir -p ~/.claude/skills/sigil
+sigil generate-skill > ~/.claude/skills/sigil/SKILL.md
+```
+
+Or just pipe it to a project-local file:
+
+```bash
+sigil generate-skill > SKILL.md
+```
+
+The skill covers the full CLI surface, the comment format, and the canonical review loop.
 
 ## License
 

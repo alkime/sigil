@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/alecthomas/kong"
 )
 
 // CLI is the top-level Kong command structure for Sigil.
 type CLI struct {
+	Version kong.VersionFlag `help:"Print version and exit." short:"V"`
+
 	GetComments       GetCommentsCmd       `cmd:"" name:"get-comments" help:"Print comments from a Markdown file as JSON."`
 	ResolveComments   ResolveCommentsCmd   `cmd:"" name:"resolve-comments" aliases:"resolve-comment" help:"Mark comments as resolved."`
 	UnresolveComments UnresolveCommentsCmd `cmd:"" name:"unresolve-comments" aliases:"unresolve-comment" help:"Mark comments as unresolved."`
