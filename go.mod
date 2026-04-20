@@ -9,6 +9,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/alecthomas/kong v1.14.0
 	github.com/charmbracelet/x/ansi v0.11.6
+	github.com/sourcegraph/go-diff v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
