@@ -189,10 +189,11 @@ sigil diff unresolve-comments <id>                  # reopen
 |-----|--------|
 | `j` / `↓`, `k` / `↑` | Navigate lines |
 | `J` / `K` | Jump between hunks |
-| `Tab` | Next file |
+| `Tab` / `Shift+Tab` | Next / prev file (cycles through a virtual **PR Comments** entry too) |
 | `n` / `N` | Next / prev comment |
-| `c` | Add comment on focused line |
-| `r` | Toggle resolve on focused comment |
+| `c` | Add comment on focused line; in the PR Comments view, adds a PR-level comment |
+| `Enter` | Open / edit the comment under the cursor |
+| `r` / `u` | Resolve / unresolve focused comment |
 | `o` | Cycle through orphaned comments |
 | `?` | Toggle keybinding help |
 | `q` | Quit |
