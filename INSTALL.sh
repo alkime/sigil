@@ -27,8 +27,28 @@ else
 fi
 
 if [ "$(uname -s)" = "Darwin" ]; then
-    echo "==> Removing macOS quarantine attribute"
-    xattr -d com.apple.quarantine "$binary" 2>/dev/null || true
+    if xattr -p com.apple.quarantine "$binary" >/dev/null 2>&1; then
+        echo ""
+        echo "macOS marked this binary as quarantined (downloaded from the internet)."
+        echo "Without removing that attribute, Gatekeeper will block it on first run."
+        if [ -t 0 ]; then
+            printf "Remove com.apple.quarantine from sigil? [Y/n] "
+            answer=""
+            read -r answer || true
+            case "$answer" in
+                ""|y|Y|yes|YES|Yes)
+                    xattr -d com.apple.quarantine "$binary"
+                    echo "    removed."
+                    ;;
+                *)
+                    echo "    skipped. Run manually later: xattr -d com.apple.quarantine $binary"
+                    ;;
+            esac
+        else
+            echo "warn: non-interactive shell — not removing quarantine."
+            echo "      run manually: xattr -d com.apple.quarantine $binary"
+        fi
+    fi
 fi
 
 chmod +x "$binary"
