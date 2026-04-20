@@ -27,6 +27,7 @@ var (
 	headerStyle       = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#EEEEEE")).Bold(true)
 	fileActiveStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
 	fileStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	fileNavHintStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#AAAAAA")).Bold(true)
 	keyHintKeyStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
 	keyHintDescStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA"))
 	separatorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#333333"))
@@ -225,7 +226,7 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 
 	// Show overflow hint if files don't all fit.
 	if len(files) > maxVisibleFiles {
-		sb.WriteString(fileStyle.Render(fmt.Sprintf("    %d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))))
+		sb.WriteString(fileNavHintStyle.Render(fmt.Sprintf("  %d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))))
 	} else {
 		s := sb.String()
 		return strings.TrimRight(s, "\n")
