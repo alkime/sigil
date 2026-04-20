@@ -159,8 +159,8 @@ Standard Docker-based deployment to fly.io.
 
 1. LLM generates a Markdown document
 2. Human reviews it in sigil, adding comments on blocks that need work
-3. Human hands the file back to the LLM: *"Address all open review comments"*
-4. LLM reads the ref markers and backmatter, updates the content, resolves comments
+3. Human hands the file back to the LLM: *"I've commented on @design.md with /sigil, you can use this address them."*
+4. LLM uses the skill's CLI sub-commands to reads open comments, updates the content, and resolve/reply when done
 5. Repeat until satisfied
 
 The format is designed to be natively consumable by LLMs — the comments are structured, machine-readable, and co-located with the content they reference. LLMs can drive the loop programmatically using the CLI subcommands above (`get-comments`, `reply-comment`, `resolve-comments`).
