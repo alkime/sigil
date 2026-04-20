@@ -242,9 +242,8 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 		}
 	case ModeInspect:
 		hints = []string{
-			keyHintRaw("r", "resolve"),
-			keyHintRaw("u", "unresolve"),
-			keyHintRaw("esc", "close"),
+			keyHintRaw("ctrl+s", "save"),
+			keyHintRaw("esc", "cancel"),
 		}
 	case ModeOrphan:
 		hints = []string{
@@ -292,7 +291,7 @@ func renderInspectModal(c *diff.Comment, ta textarea.Model, width, height int) s
 	meta := keyHintDescStyle.Render(fmt.Sprintf("by %s · %s", c.Author, c.CreatedAt.Format("2006-01-02 15:04")))
 	hunkCtx := keyHintDescStyle.Render(c.HunkHeader)
 	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render(strings.Repeat("─", min(width-10, 74)))
-	footer := keyHintDescStyle.Render("[Ctrl+S] Save  [r] resolve  [u] unresolve  [Esc] cancel")
+	footer := keyHintDescStyle.Render("[Ctrl+S] Save  [Esc] cancel")
 
 	content := strings.Join([]string{title, meta, hunkCtx, sep, ta.View(), sep, footer}, "\n")
 

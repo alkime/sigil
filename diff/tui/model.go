@@ -309,28 +309,12 @@ func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.inspectID = ""
 		m.rebuildDiffView()
 		return m, nil
-	case "r":
-		m.toggleInspectedResolved(true)
-		return m, nil
-	case "u":
-		m.toggleInspectedResolved(false)
-		return m, nil
 	}
 	var cmd tea.Cmd
 	m.inspectTA, cmd = m.inspectTA.Update(msg)
 	return m, cmd
 }
 
-func (m *Model) toggleInspectedResolved(resolved bool) {
-	for _, c := range m.comments {
-		if c.ID == m.inspectID {
-			c.Resolved = resolved
-			_ = m.saveComments()
-			m.rebuildDiffView()
-			return
-		}
-	}
-}
 
 func (m Model) updateOrphan(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
