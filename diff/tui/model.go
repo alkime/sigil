@@ -60,6 +60,7 @@ type Model struct {
 
 	// ModeInspect state
 	inspectID string
+	inspectTA textarea.Model
 
 	// ModeOrphan state
 	orphanVP viewport.Model
@@ -138,6 +139,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.commentTA, cmd = m.commentTA.Update(msg)
 		return m, cmd
+	case ModeInspect:
+		var cmd tea.Cmd
+		m.inspectTA, cmd = m.inspectTA.Update(msg)
+		return m, cmd
 	default:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -185,9 +190,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
-			m.inspectID = m.linesMeta[fl].commentID
-			m.mode = ModeInspect
-			return m, nil
+			return m.enterInspectMode(m.linesMeta[fl].commentID)
 		}
 		if len(m.files) == 0 || !m.files[m.fileIdx].IsCommentable() {
 			return m, nil
@@ -261,17 +264,61 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) enterInspectMode(id string) (tea.Model, tea.Cmd) {
+	c := m.findComment(id)
+	if c == nil {
+		return m, nil
+	}
+	ta := textarea.New()
+	taW := m.width - 12
+	if taW > 76 {
+		taW = 76
+	}
+	ta.SetWidth(taW)
+	ta.SetHeight(5)
+	ta.SetValue(c.Body)
+	m.inspectID = id
+	m.inspectTA = ta
+	m.mode = ModeInspect
+	return m, ta.Focus()
+}
+
 func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q", "enter":
+	case "esc":
 		m.mode = ModeNormal
 		m.inspectID = ""
+		return m, nil
+	case "ctrl+s":
+		body := strings.TrimSpace(m.inspectTA.Value())
+		for _, c := range m.comments {
+			if c.ID == m.inspectID {
+				if body != "" {
+					c.Body = body
+					c.UpdatedAt = time.Now().UTC()
+				}
+				break
+			}
+		}
+		if err := m.saveComments(); err != nil {
+			m.statusMsg = fmt.Sprintf("error saving: %v", err)
+		} else {
+			m.statusMsg = "comment updated"
+		}
+		m.mode = ModeNormal
+		m.inspectID = ""
+		m.rebuildDiffView()
+		return m, nil
 	case "r":
 		m.toggleInspectedResolved(true)
+		return m, nil
 	case "u":
 		m.toggleInspectedResolved(false)
+		return m, nil
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.inspectTA, cmd = m.inspectTA.Update(msg)
+	return m, cmd
 }
 
 func (m *Model) toggleInspectedResolved(resolved bool) {
@@ -328,7 +375,7 @@ func (m Model) View() tea.View {
 		return v
 	case ModeInspect:
 		c := m.findComment(m.inspectID)
-		v := tea.NewView(renderInspectModal(c, m.width, m.height))
+		v := tea.NewView(renderInspectModal(c, m.inspectTA, m.width, m.height))
 		v.AltScreen = true
 		return v
 	default:

@@ -273,8 +273,8 @@ func keyHintRaw(k, d string) string {
 	return "[" + keyHintKeyStyle.Render(k) + "] " + keyHintDescStyle.Render(d)
 }
 
-// renderInspectModal renders a read-only view of an existing comment as a centered modal.
-func renderInspectModal(c *diff.Comment, width, height int) string {
+// renderInspectModal renders an editable view of an existing comment as a centered modal.
+func renderInspectModal(c *diff.Comment, ta textarea.Model, width, height int) string {
 	if c == nil {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 			keyHintDescStyle.Render("comment not found"))
@@ -290,13 +290,11 @@ func renderInspectModal(c *diff.Comment, width, height int) string {
 	statusStyle := lipgloss.NewStyle().Bold(true).Foreground(statusColor)
 	title := titleStyle.Render(fmt.Sprintf("Comment · %s", c.File)) + "  " + statusStyle.Render(statusStr)
 	meta := keyHintDescStyle.Render(fmt.Sprintf("by %s · %s", c.Author, c.CreatedAt.Format("2006-01-02 15:04")))
-
+	hunkCtx := keyHintDescStyle.Render(c.HunkHeader)
 	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render(strings.Repeat("─", min(width-10, 74)))
-	body := contextStyle.Render(c.Body)
-	hunkCtx := keyHintDescStyle.Render("  " + c.HunkHeader)
-	footer := keyHintDescStyle.Render("[r] resolve  [u] unresolve  [Esc/Enter] close")
+	footer := keyHintDescStyle.Render("[Ctrl+S] Save  [r] resolve  [u] unresolve  [Esc] cancel")
 
-	content := strings.Join([]string{title, meta, sep, body, "", hunkCtx, "", sep, footer}, "\n")
+	content := strings.Join([]string{title, meta, hunkCtx, sep, ta.View(), sep, footer}, "\n")
 
 	modalWidth := min(width-4, 80)
 	box := lipgloss.NewStyle().
