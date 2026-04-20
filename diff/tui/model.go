@@ -60,8 +60,10 @@ type Model struct {
 	commentSide    diff.Side
 
 	// ModeInspect state
-	inspectID string
-	inspectTA textarea.Model
+	inspectID       string
+	inspectTA       textarea.Model
+	inspectHunkVP   viewport.Model
+	inspectHunkFocus bool // true = hunk viewport focused, false = textarea focused
 
 	// ModeOrphan state
 	orphanVP viewport.Model
@@ -142,7 +144,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case ModeInspect:
 		var cmd tea.Cmd
-		m.inspectTA, cmd = m.inspectTA.Update(msg)
+		if m.inspectHunkFocus {
+			m.inspectHunkVP, cmd = m.inspectHunkVP.Update(msg)
+		} else {
+			m.inspectTA, cmd = m.inspectTA.Update(msg)
+		}
 		return m, cmd
 	default:
 		var cmd tea.Cmd
@@ -278,16 +284,30 @@ func (m Model) enterInspectMode(id string) (tea.Model, tea.Cmd) {
 	if c == nil {
 		return m, nil
 	}
-	ta := textarea.New()
-	taW := m.width - 12
-	if taW > 76 {
-		taW = 76
+
+	modalW := min(m.width-4, 80)
+	innerW := modalW - 6 // subtract padding + border
+
+	// Build hunk viewport.
+	lines := m.hunkLines(c)
+	hunkContent := hunkStyle.Render(c.HunkHeader) + "\n" + strings.Join(lines, "\n")
+	vpH := min(len(lines)+1, 10)
+	if vpH < 3 {
+		vpH = 3
 	}
-	ta.SetWidth(taW)
-	ta.SetHeight(5)
+	vp := viewport.New(viewport.WithWidth(innerW), viewport.WithHeight(vpH))
+	vp.SetContent(hunkContent)
+
+	// Build textarea.
+	ta := textarea.New()
+	ta.SetWidth(innerW)
+	ta.SetHeight(4)
 	ta.SetValue(c.Body)
+
 	m.inspectID = id
 	m.inspectTA = ta
+	m.inspectHunkVP = vp
+	m.inspectHunkFocus = false
 	m.mode = ModeInspect
 	return m, m.inspectTA.Focus()
 }
@@ -298,6 +318,7 @@ func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeNormal
 		m.inspectID = ""
 		return m, nil
+
 	case "ctrl+s":
 		body := strings.TrimSpace(m.inspectTA.Value())
 		for _, c := range m.comments {
@@ -318,6 +339,20 @@ func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.inspectID = ""
 		m.rebuildDiffView()
 		return m, nil
+
+	case "tab":
+		m.inspectHunkFocus = !m.inspectHunkFocus
+		if m.inspectHunkFocus {
+			m.inspectTA.Blur()
+			return m, nil
+		}
+		return m, m.inspectTA.Focus()
+	}
+
+	if m.inspectHunkFocus {
+		var cmd tea.Cmd
+		m.inspectHunkVP, cmd = m.inspectHunkVP.Update(msg)
+		return m, cmd
 	}
 	var cmd tea.Cmd
 	m.inspectTA, cmd = m.inspectTA.Update(msg)
@@ -368,7 +403,7 @@ func (m Model) View() tea.View {
 		return v
 	case ModeInspect:
 		c := m.findComment(m.inspectID)
-		v := tea.NewView(renderInspectModal(c, m.inspectTA, m.hunkLines(c), m.width, m.height))
+		v := tea.NewView(renderInspectModal(c, m.inspectTA, m.inspectHunkVP, m.inspectHunkFocus, m.width, m.height))
 		v.AltScreen = true
 		return v
 	default:

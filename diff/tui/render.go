@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -274,7 +275,7 @@ func keyHintRaw(k, d string) string {
 }
 
 // renderInspectModal renders an editable view of an existing comment as a centered modal.
-func renderInspectModal(c *diff.Comment, ta textarea.Model, hunkLines []string, width, height int) string {
+func renderInspectModal(c *diff.Comment, ta textarea.Model, hunkVP viewport.Model, hunkFocused bool, width, height int) string {
 	if c == nil {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 			keyHintDescStyle.Render("comment not found"))
@@ -290,18 +291,25 @@ func renderInspectModal(c *diff.Comment, ta textarea.Model, hunkLines []string, 
 	statusStyle := lipgloss.NewStyle().Bold(true).Foreground(statusColor)
 	title := titleStyle.Render(fmt.Sprintf("Comment · %s", c.File)) + "  " + statusStyle.Render(statusStr)
 	meta := keyHintDescStyle.Render(fmt.Sprintf("by %s · %s", c.Author, c.CreatedAt.Format("2006-01-02 15:04")))
-	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render(strings.Repeat("─", min(width-10, 74)))
-	footer := keyHintDescStyle.Render("[Ctrl+S] Save  [Esc] cancel")
 
-	var hunkBlock string
-	if len(hunkLines) > 0 {
-		hunkHeader := hunkStyle.Render(c.HunkHeader)
-		hunkBlock = hunkHeader + "\n" + strings.Join(hunkLines, "\n")
+	sepColor := lipgloss.Color("#555555")
+	sepFocused := lipgloss.Color("#7D56F4")
+	sepW := min(width-10, 74)
+	hunkSepColor := sepColor
+	taSepColor := sepColor
+	if hunkFocused {
+		hunkSepColor = sepFocused
 	} else {
-		hunkBlock = keyHintDescStyle.Render(c.HunkHeader)
+		taSepColor = sepFocused
 	}
+	hunkSep := lipgloss.NewStyle().Foreground(hunkSepColor).Render(strings.Repeat("─", sepW))
+	taSep := lipgloss.NewStyle().Foreground(taSepColor).Render(strings.Repeat("─", sepW))
+	bottomSep := lipgloss.NewStyle().Foreground(sepColor).Render(strings.Repeat("─", sepW))
 
-	content := strings.Join([]string{title, meta, sep, hunkBlock, sep, ta.View(), sep, footer}, "\n")
+	tabHint := "  [Tab] scroll diff"
+	footer := keyHintDescStyle.Render("[Ctrl+S] Save  [Esc] cancel" + tabHint)
+
+	content := strings.Join([]string{title, meta, hunkSep, hunkVP.View(), taSep, ta.View(), bottomSep, footer}, "\n")
 
 	modalWidth := min(width-4, 80)
 	box := lipgloss.NewStyle().
