@@ -505,10 +505,14 @@ func fileListHeight(fileCount int) int {
 	if fileCount == 0 {
 		return 0
 	}
-	if fileCount > maxVisibleFiles {
-		return maxVisibleFiles + 1 // visible entries + overflow hint
+	visible := fileCount
+	if visible > maxVisibleFiles {
+		visible = maxVisibleFiles
 	}
-	return fileCount
+	if fileCount >= 2 {
+		return visible + 1 // entries + nav hint line
+	}
+	return visible
 }
 
 func (m *Model) moveLine(delta int) {
