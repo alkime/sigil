@@ -199,6 +199,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
 			return m.enterInspectMode(m.linesMeta[fl].commentID)
 		}
+		if m.fileIdx == -1 {
+			return m.enterPRCommentMode()
+		}
 		if len(m.files) == 0 || !m.files[m.fileIdx].IsCommentable() {
 			return m, nil
 		}
