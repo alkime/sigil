@@ -233,13 +233,18 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 	switch mode {
 	case ModeNormal:
 		hints = []string{
-			keyHint(km.Comment),
-			keyHint(km.Resolve),
+			keyHintRaw("enter/c", "comment"),
 			keyHint(km.NextComment),
 			keyHint(km.PrevComment),
 			keyHint(km.OrphanCycle),
 			keyHint(km.Help),
 			keyHint(km.Quit),
+		}
+	case ModeInspect:
+		hints = []string{
+			keyHintRaw("r", "resolve"),
+			keyHintRaw("u", "unresolve"),
+			keyHintRaw("esc", "close"),
 		}
 	case ModeOrphan:
 		hints = []string{
@@ -266,6 +271,42 @@ func keyHint(b key.Binding) string {
 
 func keyHintRaw(k, d string) string {
 	return "[" + keyHintKeyStyle.Render(k) + "] " + keyHintDescStyle.Render(d)
+}
+
+// renderInspectModal renders a read-only view of an existing comment as a centered modal.
+func renderInspectModal(c *diff.Comment, width, height int) string {
+	if c == nil {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
+			keyHintDescStyle.Render("comment not found"))
+	}
+
+	statusStr := "open"
+	statusColor := lipgloss.Color("#FF8800")
+	if c.Resolved {
+		statusStr = "resolved"
+		statusColor = lipgloss.Color("#00CC66")
+	}
+	titleStyle := lipgloss.NewStyle().Bold(true)
+	statusStyle := lipgloss.NewStyle().Bold(true).Foreground(statusColor)
+	title := titleStyle.Render(fmt.Sprintf("Comment · %s", c.File)) + "  " + statusStyle.Render(statusStr)
+	meta := keyHintDescStyle.Render(fmt.Sprintf("by %s · %s", c.Author, c.CreatedAt.Format("2006-01-02 15:04")))
+
+	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render(strings.Repeat("─", min(width-10, 74)))
+	body := contextStyle.Render(c.Body)
+	hunkCtx := keyHintDescStyle.Render("  " + c.HunkHeader)
+	footer := keyHintDescStyle.Render("[r] resolve  [u] unresolve  [Esc/Enter] close")
+
+	content := strings.Join([]string{title, meta, sep, body, "", hunkCtx, "", sep, footer}, "\n")
+
+	modalWidth := min(width-4, 80)
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		Padding(1, 2).
+		Width(modalWidth).
+		Render(content)
+
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
 // renderCommentModal renders the new-comment input as a centered floating modal.

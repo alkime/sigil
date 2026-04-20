@@ -22,6 +22,7 @@ type Mode int
 const (
 	ModeNormal  Mode = iota
 	ModeComment      // textarea overlay for comment entry
+	ModeInspect      // read-only modal for an existing comment
 	ModeOrphan       // reading/resolving an orphaned comment
 	ModeHelp         // keybinding help overlay
 	ModePicker       // multi-PR picker (handled by pickerModel, not Model)
@@ -56,6 +57,9 @@ type Model struct {
 	commentFileIdx int
 	commentHunkIdx int
 	commentSide    diff.Side
+
+	// ModeInspect state
+	inspectID string
 
 	// ModeOrphan state
 	orphanVP viewport.Model
@@ -115,6 +119,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateHelp(msg)
 		case ModeComment:
 			return m.updateComment(msg)
+		case ModeInspect:
+			return m.updateInspect(msg)
 		case ModeOrphan:
 			return m.updateOrphan(msg)
 		default:
@@ -140,6 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	fl := m.focusedLine
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -175,6 +182,17 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "N":
 		m.jumpComment(-1)
 		return m, nil
+
+	case "enter":
+		if fl < len(m.linesMeta) && m.linesMeta[fl].isComment {
+			m.inspectID = m.linesMeta[fl].commentID
+			m.mode = ModeInspect
+			return m, nil
+		}
+		if len(m.files) == 0 || !m.files[m.fileIdx].IsCommentable() {
+			return m, nil
+		}
+		return m.enterCommentMode()
 
 	case "c":
 		if len(m.files) == 0 {
@@ -243,6 +261,30 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updateInspect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q", "enter":
+		m.mode = ModeNormal
+		m.inspectID = ""
+	case "r":
+		m.toggleInspectedResolved(true)
+	case "u":
+		m.toggleInspectedResolved(false)
+	}
+	return m, nil
+}
+
+func (m *Model) toggleInspectedResolved(resolved bool) {
+	for _, c := range m.comments {
+		if c.ID == m.inspectID {
+			c.Resolved = resolved
+			_ = m.saveComments()
+			m.rebuildDiffView()
+			return
+		}
+	}
+}
+
 func (m Model) updateOrphan(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -282,6 +324,11 @@ func (m Model) View() tea.View {
 		return v
 	case ModeComment:
 		v := tea.NewView(renderCommentModal(m.commentTA, m.width, m.height))
+		v.AltScreen = true
+		return v
+	case ModeInspect:
+		c := m.findComment(m.inspectID)
+		v := tea.NewView(renderInspectModal(c, m.width, m.height))
 		v.AltScreen = true
 		return v
 	default:
@@ -709,6 +756,15 @@ func (m *Model) saveComments() error {
 		flat[i] = *c
 	}
 	return diff.SaveComments(m.org, m.repoName, m.session.PRNumber, flat)
+}
+
+func (m Model) findComment(id string) *diff.Comment {
+	for _, c := range m.comments {
+		if c.ID == id {
+			return c
+		}
+	}
+	return nil
 }
 
 // Exported accessors for testing.
