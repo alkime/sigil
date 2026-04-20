@@ -31,6 +31,7 @@ var (
 	keyHintKeyStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
 	keyHintDescStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA"))
 	separatorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#333333"))
+	selectionStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#2A2A3A"))
 	statusMsgStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
 	orphanBannerStyle = lipgloss.NewStyle().Background(lipgloss.Color("#3A1A00")).Foreground(lipgloss.Color("#FFAA00")).Bold(true)
 	helpTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))

@@ -429,18 +429,14 @@ func (m Model) buildView() string {
 		parts = append(parts, separatorStyle.Render(strings.Repeat("─", m.width)))
 	}
 
-	// Build a viewport copy with the current gutter function.
 	vp := m.viewport
 	fl := m.focusedLine
-	lm := m.linesMeta
-	vp.LeftGutterFunc = func(ctx viewport.GutterContext) string {
-		if ctx.Soft || ctx.Index >= len(lm) {
-			return "   "
+	w := m.width
+	vp.StyleLineFunc = func(idx int) lipgloss.Style {
+		if idx == fl {
+			return selectionStyle.Width(w)
 		}
-		if ctx.Index == fl {
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true).Render("▶") + " "
-		}
-		return "   "
+		return lipgloss.NewStyle()
 	}
 
 	switch m.mode {
