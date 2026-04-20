@@ -17,12 +17,14 @@ var (
 
 func main() {
 	var c cli.CLI
+	cliCtx := &cli.CLIContext{Out: os.Stdout}
 	ctx := kong.Parse(&c,
 		kong.Name("sigil"),
 		kong.Description("Terminal Markdown viewer with inline review commenting."),
 		kong.Vars{"version": fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)},
+		kong.Bind(cliCtx),
 	)
-	err := ctx.Run(&cli.CLIContext{Out: os.Stdout})
+	err := ctx.Run(cliCtx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
