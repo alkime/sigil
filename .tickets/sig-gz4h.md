@@ -1,6 +1,6 @@
 ---
 id: sig-gz4h
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-04-20T16:49:51Z

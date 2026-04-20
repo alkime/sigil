@@ -1,6 +1,6 @@
 ---
 id: sig-jrmh
-status: open
+status: closed
 deps: [sig-kota, sig-6704]
 links: []
 created: 2026-04-20T16:49:51Z
