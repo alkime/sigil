@@ -1,6 +1,6 @@
 ---
 id: sig-sb3m
-status: open
+status: closed
 deps: [sig-hgd7]
 links: []
 created: 2026-04-20T16:49:51Z

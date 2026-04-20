@@ -1,6 +1,6 @@
 ---
 id: sig-hgd7
-status: open
+status: closed
 deps: [sig-liqf, sig-6704, sig-jrmh, sig-cvr1, sig-eij7]
 links: []
 created: 2026-04-20T16:49:51Z

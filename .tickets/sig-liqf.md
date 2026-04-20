@@ -1,6 +1,6 @@
 ---
 id: sig-liqf
-status: open
+status: closed
 deps: [sig-lmwr, sig-kota]
 links: []
 created: 2026-04-20T16:49:51Z
