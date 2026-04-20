@@ -6,7 +6,7 @@ import (
 
 const skillContent = `# Sigil — Markdown Review Tool
 
-Sigil is a terminal-based Markdown review tool. It lets humans and LLMs
+Sigil is a terminal-based Markdown & PR Diff review tool. It lets humans and LLMs
 collaborate through inline review comments embedded directly in Markdown files.
 
 ## Prerequisites

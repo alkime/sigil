@@ -1,6 +1,6 @@
 # Sigil
 
-A terminal-based Markdown review tool. Read rendered Markdown, navigate by content blocks, and add inline review comments — all persisted within the file itself.
+A terminal-based Markdown & PR Diff review tool. Read rendered Markdown, navigate by content blocks, and add inline review comments — all persisted within the file itself.
 
 Designed for human-in-the-loop review of LLM-generated content: review Markdown in the TUI, add comments, hand the file back to the LLM with "address all open review comments."
 
