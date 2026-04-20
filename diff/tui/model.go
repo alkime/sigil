@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -367,7 +368,7 @@ func (m Model) View() tea.View {
 		return v
 	case ModeInspect:
 		c := m.findComment(m.inspectID)
-		v := tea.NewView(renderInspectModal(c, m.inspectTA, m.width, m.height))
+		v := tea.NewView(renderInspectModal(c, m.inspectTA, m.hunkLines(c), m.width, m.height))
 		v.AltScreen = true
 		return v
 	default:
@@ -806,6 +807,43 @@ func (m *Model) toggleCommentResolved(id string, resolved bool) {
 			return
 		}
 	}
+}
+
+// hunkLines finds the hunk for a comment and returns its rendered lines.
+func (m Model) hunkLines(c *diff.Comment) []string {
+	if c == nil {
+		return nil
+	}
+	for _, f := range m.files {
+		if f.NewPath != c.File && f.OldPath != c.File {
+			continue
+		}
+		for _, h := range f.Hunks {
+			if h.Header != c.HunkHeader {
+				continue
+			}
+			ext := filepath.Ext(f.NewPath)
+			maxLine := 0
+			for _, l := range h.Lines {
+				if int(l.NewLineNum) > maxLine {
+					maxLine = int(l.NewLineNum)
+				}
+				if int(l.OldLineNum) > maxLine {
+					maxLine = int(l.OldLineNum)
+				}
+			}
+			numWidth := len(fmt.Sprintf("%d", maxLine))
+			if numWidth < 3 {
+				numWidth = 3
+			}
+			lines := make([]string, len(h.Lines))
+			for i, l := range h.Lines {
+				lines[i] = renderOneDiffLine(l, numWidth, ext)
+			}
+			return lines
+		}
+	}
+	return nil
 }
 
 func (m Model) findComment(id string) *diff.Comment {
