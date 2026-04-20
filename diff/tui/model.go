@@ -291,9 +291,9 @@ func (m Model) enterInspectMode(id string) (tea.Model, tea.Cmd) {
 	// Build hunk viewport.
 	lines := m.hunkLines(c)
 	hunkContent := hunkStyle.Render(c.HunkHeader) + "\n" + strings.Join(lines, "\n")
-	vpH := min(len(lines)+1, 10)
-	if vpH < 3 {
-		vpH = 3
+	vpH := min(len(lines)+1, 20)
+	if vpH < 5 {
+		vpH = 5
 	}
 	vp := viewport.New(viewport.WithWidth(innerW), viewport.WithHeight(vpH))
 	vp.SetContent(hunkContent)
@@ -301,7 +301,7 @@ func (m Model) enterInspectMode(id string) (tea.Model, tea.Cmd) {
 	// Build textarea.
 	ta := textarea.New()
 	ta.SetWidth(innerW)
-	ta.SetHeight(4)
+	ta.SetHeight(6)
 	ta.SetValue(c.Body)
 
 	m.inspectID = id
