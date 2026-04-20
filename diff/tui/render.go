@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textarea"
 	"charm.land/lipgloss/v2"
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -265,6 +266,25 @@ func keyHint(b key.Binding) string {
 
 func keyHintRaw(k, d string) string {
 	return "[" + keyHintKeyStyle.Render(k) + "] " + keyHintDescStyle.Render(d)
+}
+
+// renderCommentModal renders the new-comment input as a centered floating modal.
+func renderCommentModal(ta textarea.Model, width, height int) string {
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF8800")).Render("New Comment")
+	footer := keyHintDescStyle.Render("[Ctrl+S] Submit  [Enter] Newline  [Esc] Cancel")
+	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render(strings.Repeat("─", min(width-10, 74)))
+
+	content := strings.Join([]string{title, "", ta.View(), "", sep, footer}, "\n")
+
+	modalWidth := min(width-4, 80)
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		Padding(1, 2).
+		Width(modalWidth).
+		Render(content)
+
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
 // renderHelp renders the help overlay.

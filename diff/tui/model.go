@@ -220,7 +220,6 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = ModeNormal
 		m.statusMsg = ""
-		m.rebuildDiffView()
 		return m, nil
 
 	case "ctrl+s":
@@ -228,7 +227,6 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if body == "" {
 			m.mode = ModeNormal
 			m.statusMsg = ""
-			m.rebuildDiffView()
 			return m, nil
 		}
 		if err := m.submitComment(body); err != nil {
@@ -237,7 +235,6 @@ func (m Model) updateComment(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "comment added"
 		}
 		m.mode = ModeNormal
-		m.rebuildDiffView()
 		return m, nil
 	}
 
@@ -283,6 +280,10 @@ func (m Model) View() tea.View {
 		v := tea.NewView(renderHelp(m.keymap, m.width, m.height))
 		v.AltScreen = true
 		return v
+	case ModeComment:
+		v := tea.NewView(renderCommentModal(m.commentTA, m.width, m.height))
+		v.AltScreen = true
+		return v
 	default:
 		v := tea.NewView(m.buildView())
 		v.AltScreen = true
@@ -323,9 +324,6 @@ func (m Model) buildView() string {
 	switch m.mode {
 	case ModeOrphan:
 		parts = append(parts, m.orphanVP.View())
-	case ModeComment:
-		parts = append(parts, vp.View())
-		parts = append(parts, m.buildCommentOverlay())
 	default:
 		parts = append(parts, vp.View())
 	}
@@ -339,11 +337,6 @@ func (m Model) buildView() string {
 	return strings.Join(parts, "\n")
 }
 
-func (m Model) buildCommentOverlay() string {
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF8800")).Render("New Comment")
-	hint := keyHintDescStyle.Render("  Ctrl+S to submit  ·  Esc to cancel")
-	return title + "\n" + m.commentTA.View() + "\n" + hint
-}
 
 // rebuildDiffView rebuilds the viewport content for the current file.
 func (m *Model) rebuildDiffView() {
@@ -382,9 +375,6 @@ func (m *Model) viewportHeight() int {
 	}
 	if len(m.orphans) > 0 && m.mode != ModeOrphan {
 		overhead++ // orphan banner
-	}
-	if m.mode == ModeComment {
-		overhead += 8
 	}
 	h := m.height - overhead
 	if h < 3 {
@@ -535,7 +525,6 @@ func (m Model) enterCommentMode() (tea.Model, tea.Cmd) {
 	m.commentHunkIdx = meta.hunkIdx
 	m.commentSide = side
 	m.mode = ModeComment
-	m.rebuildDiffView()
 
 	return m, m.commentTA.Focus()
 }
