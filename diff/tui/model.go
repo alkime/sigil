@@ -282,6 +282,16 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.focusedCol = 0
 		return m, nil
 
+	case "ctrl+d":
+		m.moveLine(halfPage(m.viewport.Height()))
+		m.focusedCol = 0
+		return m, nil
+
+	case "ctrl+u":
+		m.moveLine(-halfPage(m.viewport.Height()))
+		m.focusedCol = 0
+		return m, nil
+
 	case "tab":
 		m.cycleFile(1)
 		m.focusedCol = 0
@@ -767,6 +777,13 @@ func fileListHeight(fileCount int) int {
 		return visible + 2 // entries + separator + nav hint
 	}
 	return visible + 1 // entry + separator
+}
+
+func halfPage(height int) int {
+	if height < 2 {
+		return 1
+	}
+	return height / 2
 }
 
 func (m *Model) moveLine(delta int) {

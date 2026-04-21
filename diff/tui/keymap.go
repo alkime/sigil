@@ -8,6 +8,8 @@ type KeyMap struct {
 	Down        key.Binding
 	HunkUp      key.Binding
 	HunkDown    key.Binding
+	HalfPageUp   key.Binding
+	HalfPageDown key.Binding
 	NextFile    key.Binding
 	PrevFile    key.Binding
 	NextComment key.Binding
@@ -36,8 +38,10 @@ func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Up:          key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "line up")),
 		Down:        key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "line down")),
-		HunkUp:      key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "prev hunk")),
-		HunkDown:    key.NewBinding(key.WithKeys("J"), key.WithHelp("J", "next hunk")),
+		HunkUp:       key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "prev hunk")),
+		HunkDown:     key.NewBinding(key.WithKeys("J"), key.WithHelp("J", "next hunk")),
+		HalfPageUp:   key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "half page up")),
+		HalfPageDown: key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "half page down")),
 		NextFile:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab/S-Tab", "next/prev file")),
 		PrevFile:    key.NewBinding(key.WithKeys("shift+tab")),
 		NextComment: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next comment")),

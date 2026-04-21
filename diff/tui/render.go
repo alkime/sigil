@@ -498,6 +498,8 @@ func renderHelp(km KeyMap, width, height int) string {
 				{km.Down.Help().Key, km.Down.Help().Desc},
 				{km.HunkUp.Help().Key, km.HunkUp.Help().Desc},
 				{km.HunkDown.Help().Key, km.HunkDown.Help().Desc},
+				{km.HalfPageUp.Help().Key, km.HalfPageUp.Help().Desc},
+				{km.HalfPageDown.Help().Key, km.HalfPageDown.Help().Desc},
 				{km.NextFile.Help().Key, km.NextFile.Help().Desc},
 				{km.NextComment.Help().Key, km.NextComment.Help().Desc},
 				{km.PrevComment.Help().Key, km.PrevComment.Help().Desc},
