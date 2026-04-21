@@ -371,7 +371,8 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 			keyHintRaw("enter/c", "comment"),
 			keyHintRaw("r/u", "resolve/unresolve"),
 			keyHint(km.NextComment),
-			keyHint(km.PrevComment),
+			keyHintRaw("gd", "go to def"),
+			keyHintRaw("ctrl+o", "jump back"),
 			keyHint(km.OrphanCycle),
 			keyHint(km.Help),
 			keyHint(km.Quit),
@@ -394,6 +395,14 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 		hints = []string{
 			keyHintRaw("ctrl+s", "submit"),
 			keyHintRaw("esc", "cancel"),
+		}
+	case ModeDefinition:
+		hints = []string{
+			keyHintRaw("j/k", "scroll"),
+			keyHintRaw("h/l/w/b/e", "cursor"),
+			keyHintRaw("gd", "go to def"),
+			keyHintRaw("ctrl+o", "jump back"),
+			keyHintRaw("q/esc", "back"),
 		}
 	}
 	return "  " + strings.Join(hints, "  ")
@@ -477,24 +486,60 @@ func renderCommentModal(ta textarea.Model, width, height int) string {
 
 // renderHelp renders the help overlay.
 func renderHelp(km KeyMap, width, height int) string {
-	bindings := [][2]string{
-		{km.Up.Help().Key, km.Up.Help().Desc},
-		{km.Down.Help().Key, km.Down.Help().Desc},
-		{km.HunkUp.Help().Key, km.HunkUp.Help().Desc},
-		{km.HunkDown.Help().Key, km.HunkDown.Help().Desc},
-		{km.NextFile.Help().Key, km.NextFile.Help().Desc},
-		{km.NextComment.Help().Key, km.NextComment.Help().Desc},
-		{km.PrevComment.Help().Key, km.PrevComment.Help().Desc},
-		{km.Comment.Help().Key, km.Comment.Help().Desc},
-		{km.Resolve.Help().Key, km.Resolve.Help().Desc},
-		{km.OrphanCycle.Help().Key, km.OrphanCycle.Help().Desc},
-		{km.Quit.Help().Key, km.Quit.Help().Desc},
+	type group struct {
+		title    string
+		bindings [][2]string
+	}
+	groups := []group{
+		{
+			title: "Navigation",
+			bindings: [][2]string{
+				{km.Up.Help().Key, km.Up.Help().Desc},
+				{km.Down.Help().Key, km.Down.Help().Desc},
+				{km.HunkUp.Help().Key, km.HunkUp.Help().Desc},
+				{km.HunkDown.Help().Key, km.HunkDown.Help().Desc},
+				{km.NextFile.Help().Key, km.NextFile.Help().Desc},
+				{km.NextComment.Help().Key, km.NextComment.Help().Desc},
+				{km.PrevComment.Help().Key, km.PrevComment.Help().Desc},
+			},
+		},
+		{
+			title: "Cursor",
+			bindings: [][2]string{
+				{km.ColLeft.Help().Key, km.ColLeft.Help().Desc},
+				{km.ColRight.Help().Key, km.ColRight.Help().Desc},
+				{km.WordNext.Help().Key, km.WordNext.Help().Desc},
+				{km.WordPrev.Help().Key, km.WordPrev.Help().Desc},
+				{km.WordEnd.Help().Key, km.WordEnd.Help().Desc},
+			},
+		},
+		{
+			title: "Definition",
+			bindings: [][2]string{
+				{km.GoToDef.Help().Key, km.GoToDef.Help().Desc},
+				{km.GoToDefAlt.Help().Key, km.GoToDefAlt.Help().Desc},
+				{km.JumpBack.Help().Key, km.JumpBack.Help().Desc},
+				{"q/esc", "close definition viewer"},
+			},
+		},
+		{
+			title: "Actions",
+			bindings: [][2]string{
+				{km.Comment.Help().Key, km.Comment.Help().Desc},
+				{km.Resolve.Help().Key, km.Resolve.Help().Desc},
+				{km.OrphanCycle.Help().Key, km.OrphanCycle.Help().Desc},
+				{km.Quit.Help().Key, km.Quit.Help().Desc},
+			},
+		},
 	}
 
 	var sb strings.Builder
-	sb.WriteString(helpTitleStyle.Render("Key Bindings") + "\n\n")
-	for _, b := range bindings {
-		sb.WriteString(keyHintKeyStyle.Width(10).Render(b[0]) + "  " + keyHintDescStyle.Render(b[1]) + "\n")
+	sb.WriteString(helpTitleStyle.Render("Key Bindings") + "\n")
+	for _, g := range groups {
+		sb.WriteString("\n" + helpTitleStyle.Render(g.title) + "\n")
+		for _, b := range g.bindings {
+			sb.WriteString(keyHintKeyStyle.Width(10).Render(b[0]) + "  " + keyHintDescStyle.Render(b[1]) + "\n")
+		}
 	}
 	sb.WriteString("\n" + keyHintDescStyle.Render("[?/esc/q] close"))
 
