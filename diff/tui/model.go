@@ -98,7 +98,7 @@ type Model struct {
 	lspReqCancel context.CancelFunc
 
 	// lastKey records the most recent normal-mode key, used for chord
-	// detection (e.g. 'gg' → go-to-definition). Cleared on every non-chord key.
+	// detection (e.g. 'gd' → go-to-definition). Cleared on every non-chord key.
 	lastKey string
 
 	// jumpHistory is a bounded stack of prior locations for ctrl+o.
@@ -244,15 +244,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	keyStr := msg.String()
 
-	// 'gg' chord: first g records lastKey; second g fires go-to-definition.
+	// 'gd' chord: 'g' records lastKey; subsequent 'd' fires go-to-definition.
 	if keyStr == "g" {
-		if m.lastKey == "g" {
-			m.lastKey = ""
-			cmd := m.goToDefinition()
-			return m, cmd
-		}
 		m.lastKey = "g"
 		return m, nil
+	}
+	if keyStr == "d" && m.lastKey == "g" {
+		m.lastKey = ""
+		cmd := m.goToDefinition()
+		return m, cmd
 	}
 	// Any other key clears the chord state.
 	m.lastKey = ""

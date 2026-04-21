@@ -54,7 +54,7 @@ func DefaultKeyMap() KeyMap {
 		WordPrev: key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "prev word")),
 		WordEnd:  key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "word end")),
 
-		GoToDef:    key.NewBinding(key.WithKeys("g"), key.WithHelp("gg", "go to definition")),
+		GoToDef:    key.NewBinding(key.WithKeys("d"), key.WithHelp("gd", "go to definition")),
 		GoToDefAlt: key.NewBinding(key.WithKeys("ctrl+]"), key.WithHelp("ctrl+]", "go to definition")),
 		JumpBack:   key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("ctrl+o", "jump back")),
 	}

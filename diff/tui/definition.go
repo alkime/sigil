@@ -473,15 +473,15 @@ func clearDefState(m *Model) {
 func updateDefinition(m *Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	keyStr := msg.String()
 
-	// 'gg' chord fires recursive go-to-definition on the cursor symbol.
+	// 'gd' chord fires recursive go-to-definition on the cursor symbol.
 	if keyStr == "g" {
-		if m.lastKey == "g" {
-			m.lastKey = ""
-			cmd := recurseDefinition(m)
-			return *m, cmd
-		}
 		m.lastKey = "g"
 		return *m, nil
+	}
+	if keyStr == "d" && m.lastKey == "g" {
+		m.lastKey = ""
+		cmd := recurseDefinition(m)
+		return *m, cmd
 	}
 	m.lastKey = ""
 

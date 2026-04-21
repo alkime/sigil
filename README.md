@@ -197,17 +197,17 @@ sigil diff unresolve-comments <id>                  # reopen
 | `o` | Cycle through orphaned comments |
 | `h` / `l` | Move the column cursor on the focused line |
 | `w` / `b` / `e` | Word-motion cursor (next / previous / end) |
-| `gg` / `Ctrl+]` | Go to definition of the symbol under the cursor |
+| `gd` / `Ctrl+]` | Go to definition of the symbol under the cursor |
 | `Ctrl+o` | Jump back to the previous location |
 | `?` | Toggle keybinding help |
 | `q` | Quit |
 
 ### Go to definition
 
-Place the column cursor on a symbol with `h/l/w/b/e`, then press `gg` (or `Ctrl+]`) to jump to its definition.
+Place the column cursor on a symbol with `h/l/w/b/e`, then press `gd` (or `Ctrl+]`) to jump to its definition.
 
 - **In-diff target** — the viewport scrolls to and highlights the definition line.
-- **Out-of-diff target** — opens a read-only full-file viewer; `q` or `Esc` returns to the diff. Inside the viewer, `j/k/J/K` scroll, `h/l/w/b/e` move the cursor, and `gg` recurses.
+- **Out-of-diff target** — opens a read-only full-file viewer; `q` or `Esc` returns to the diff. Inside the viewer, `j/k/J/K` scroll, `h/l/w/b/e` move the cursor, and `gd` recurses.
 - **`Ctrl+o`** — pops the jump-history stack and returns to the previous location.
 
 Requires `gopls` on your `PATH`. Only Go (`.go`) files are supported today; TypeScript and Python are planned.

@@ -9,9 +9,9 @@ import (
 	dtui "github.com/alkime/sigil/diff/tui"
 )
 
-// TestGoToDef_chordRequiresTwoG ensures a single 'g' press is a no-op; chord
-// detection only fires on the second 'g'.
-func TestGoToDef_chordRequiresTwoG(t *testing.T) {
+// TestGoToDef_chordRequiresGD ensures a single 'g' press is a no-op; chord
+// detection only fires on the subsequent 'd'.
+func TestGoToDef_chordRequiresGD(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	m := setupModel(t)
 
@@ -35,8 +35,8 @@ func TestGoToDef_noWorktree(t *testing.T) {
 	// Move to "package main" (focusedLine 1, col 0 is on 'p' — a word rune).
 	m1 := send(m, "j").(dtui.Model)
 
-	// Fire the 'gg' chord.
-	m2 := send(m1, "g", "g").(dtui.Model)
+	// Fire the 'gd' chord.
+	m2 := send(m1, "g", "d").(dtui.Model)
 
 	status := m2.StatusMsg()
 	if !strings.Contains(status, "LSP disabled") && !strings.Contains(status, "no LSP configured") {
@@ -50,7 +50,7 @@ func TestGoToDef_hunkHeaderNoSymbol(t *testing.T) {
 	m := setupModel(t)
 
 	// focusedLine 0 is the hunk header.
-	m2 := send(m, "g", "g").(dtui.Model)
+	m2 := send(m, "g", "d").(dtui.Model)
 	if !strings.Contains(m2.StatusMsg(), "no symbol under cursor") {
 		t.Errorf("expected 'no symbol under cursor', got: %q", m2.StatusMsg())
 	}
