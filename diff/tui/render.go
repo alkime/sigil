@@ -60,9 +60,12 @@ type commentPos struct {
 // diffRenderResult holds the rendered content plus navigation metadata.
 type diffRenderResult struct {
 	content          string
+	lines            []string
 	linesMeta        []lineInfo
 	hunkStarts       []int
 	commentPositions []commentPos
+	numWidth         int
+	ext              string
 }
 
 // renderDiff renders a single file's diff into a string with accompanying metadata.
@@ -131,10 +134,59 @@ func renderDiff(file diff.ParsedFile, comments []*diff.Comment, width int) diffR
 
 	return diffRenderResult{
 		content:          strings.Join(lines, "\n"),
+		lines:            lines,
 		linesMeta:        meta,
 		hunkStarts:       hunkStarts,
 		commentPositions: positions,
+		numWidth:         numWidth,
+		ext:              ext,
 	}
+}
+
+// cursorStyle paints the cursor cell on the focused line. Explicit fg/bg
+// (not Reverse()) so it remains visible on top of selectionStyle's background.
+var cursorStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("#EEEEEE")).
+	Foreground(lipgloss.Color("#1A1A2E"))
+
+// renderFocusedLineWithCursor re-renders a single diff line with the cursor
+// drawn at focusedCol (rune index into l.Text). Skips chroma highlighting on
+// the focused line so the cursor cell stays predictable. The line background
+// is supplied separately via vp.StyleLineFunc.
+func renderFocusedLineWithCursor(l diff.ParsedLine, numWidth, focusedCol int) string {
+	var prefix string
+	var bodyStyle lipgloss.Style
+	switch l.Kind {
+	case diff.LineAdd:
+		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
+		prefix = addStyle.Render(num + " + ")
+		bodyStyle = addStyle
+	case diff.LineDelete:
+		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.OldLineNum))
+		prefix = deleteStyle.Render(num + " - ")
+		bodyStyle = deleteStyle
+	default:
+		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
+		prefix = num + "   "
+		bodyStyle = lipgloss.NewStyle()
+	}
+
+	runes := []rune(l.Text)
+	if len(runes) == 0 {
+		return prefix + cursorStyle.Render(" ")
+	}
+	col := focusedCol
+	if col < 0 {
+		col = 0
+	}
+	if col >= len(runes) {
+		col = len(runes) - 1
+	}
+
+	before := bodyStyle.Render(string(runes[:col]))
+	cursor := cursorStyle.Render(string(runes[col]))
+	after := bodyStyle.Render(string(runes[col+1:]))
+	return prefix + before + cursor + after
 }
 
 // renderOneDiffLine renders a single diff line with line number and coloring.

@@ -221,6 +221,86 @@ func TestNavigation_JK_hunks(t *testing.T) {
 	}
 }
 
+func TestCursor_hlMovesAndClamps(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := setupModel(t)
+
+	// Move past hunk header to a renderable diff line.
+	m1 := send(m, "j").(dtui.Model)
+	if m1.FocusedCol() != 0 {
+		t.Fatalf("initial focusedCol after j = %d, want 0", m1.FocusedCol())
+	}
+
+	// l moves cursor right.
+	m2 := send(m1, "l").(dtui.Model)
+	if m2.FocusedCol() != 1 {
+		t.Errorf("after l: focusedCol = %d, want 1", m2.FocusedCol())
+	}
+
+	// h at col 0 stays at 0 (clamp).
+	m3 := send(m1, "h").(dtui.Model)
+	if m3.FocusedCol() != 0 {
+		t.Errorf("h at col 0: focusedCol = %d, want 0 (clamped)", m3.FocusedCol())
+	}
+
+	// Spamming l clamps at len(text)-1.
+	cur := tea.Model(m1)
+	for i := 0; i < 200; i++ {
+		cur, _ = cur.Update(pressKey("l"))
+	}
+	if cur.(dtui.Model).FocusedCol() < 1 {
+		t.Errorf("after spamming l: focusedCol = %d, want >= 1", cur.(dtui.Model).FocusedCol())
+	}
+
+	// Line motion (j) resets focusedCol.
+	m4 := send(cur, "j").(dtui.Model)
+	if m4.FocusedCol() != 0 {
+		t.Errorf("after j: focusedCol = %d, want 0 (reset)", m4.FocusedCol())
+	}
+}
+
+func TestCursor_wbeWordMotions(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := setupModel(t)
+
+	// Land on first hunk line "package main" (focusedLine 1, col 0).
+	m1 := send(m, "j").(dtui.Model)
+	if m1.FocusedCol() != 0 {
+		t.Fatalf("setup focusedCol = %d, want 0", m1.FocusedCol())
+	}
+
+	// w jumps to start of next word ("main" at col 8).
+	m2 := send(m1, "w").(dtui.Model)
+	if m2.FocusedCol() != 8 {
+		t.Errorf("after w: focusedCol = %d, want 8", m2.FocusedCol())
+	}
+
+	// b jumps back to start of previous word ("package" at col 0).
+	m3 := send(m2, "b").(dtui.Model)
+	if m3.FocusedCol() != 0 {
+		t.Errorf("after b: focusedCol = %d, want 0", m3.FocusedCol())
+	}
+
+	// e jumps to end of current word ("package" ends at col 6).
+	m4 := send(m3, "e").(dtui.Model)
+	if m4.FocusedCol() != 6 {
+		t.Errorf("after e: focusedCol = %d, want 6", m4.FocusedCol())
+	}
+}
+
+func TestCursor_skipsHunkHeader(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := setupModel(t)
+	// focusedLine 0 is the hunk header → cursor motions are no-ops.
+	if m.FocusedLine() != 0 {
+		t.Fatalf("setup focusedLine = %d, want 0", m.FocusedLine())
+	}
+	m2 := send(m, "l", "l", "w", "e").(dtui.Model)
+	if m2.FocusedCol() != 0 {
+		t.Errorf("focusedCol on hunk header should stay 0, got %d", m2.FocusedCol())
+	}
+}
+
 func TestNavigation_n_noComments(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	m := setupModel(t)
