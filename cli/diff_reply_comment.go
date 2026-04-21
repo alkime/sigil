@@ -20,7 +20,7 @@ type DiffReplyCommentCmd struct {
 
 // Run appends "\n\nREPLY: <text>" to the comment body and saves under flock.
 func (c *DiffReplyCommentCmd) Run(ctx *CLIContext) error {
-	session, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
+	session, _, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
 		SessionID:    ctx.DiffSession,
 		IncludeDraft: ctx.DiffDraft,
 	})

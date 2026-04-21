@@ -54,7 +54,7 @@ func TestIntegration_happyPath(t *testing.T) {
 	repoDir, _, _ := setupIntegrationRepo(t)
 	setupMultiCmdGH(t, integrationPRListJSON, integrationDiff)
 
-	session, pd, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	session, pd, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -90,13 +90,13 @@ func TestIntegration_sessionOverride(t *testing.T) {
 	setupMultiCmdGH(t, integrationPRListJSON, integrationDiff)
 
 	// Create session via auto-detect
-	first, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	first, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("first Resolve: %v", err)
 	}
 
 	// Load by session ID — should skip auto-detect
-	second, _, err := Resolve(context.Background(), ResolveOpts{SessionID: first.ID})
+	second, _, _, err := Resolve(context.Background(), ResolveOpts{SessionID: first.ID})
 	if err != nil {
 		t.Fatalf("Resolve by ID: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestIntegration_zeroPRs(t *testing.T) {
 	// Empty PR list
 	setupMultiCmdGH(t, "[]", integrationDiff)
 
-	_, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	_, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err == nil {
 		t.Fatal("expected error for zero PRs")
 	}
@@ -141,7 +141,7 @@ func TestIntegration_ghNotInstalled(t *testing.T) {
 	}
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	_, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	_, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err == nil {
 		t.Fatal("expected error when gh fails")
 	}
@@ -168,7 +168,7 @@ func TestIntegration_nonGitHubRemote(t *testing.T) {
 
 	setupMultiCmdGH(t, integrationPRListJSON, integrationDiff)
 
-	_, _, err := Resolve(context.Background(), ResolveOpts{CWD: dir})
+	_, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: dir})
 	if err == nil {
 		t.Fatal("expected error for non-GitHub remote")
 	}
@@ -185,7 +185,7 @@ func TestIntegration_drift_newSnapshotAndOrphan(t *testing.T) {
 	setupMultiCmdGH(t, integrationPRListJSON, integrationDiff)
 
 	// First resolve — creates session + snapshot
-	session1, pd1, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	session1, pd1, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("first Resolve: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestIntegration_drift_newSnapshotAndOrphan(t *testing.T) {
 	setupMultiCmdGH(t, integrationPRListJSON, newDiff)
 
 	// Second resolve — should create new snapshot
-	session2, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	session2, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("second Resolve: %v", err)
 	}

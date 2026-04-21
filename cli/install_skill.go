@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+// Skill text is agent-facing; the reviewer-facing gd / go-to-definition
+// feature is documented in README.md instead of here.
 const skillContent = `# Sigil — Markdown Review Tool
 
 Sigil is a terminal-based Markdown & PR Diff review tool. It lets humans and LLMs

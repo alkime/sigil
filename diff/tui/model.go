@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/alkime/sigil/diff"
+	"github.com/alkime/sigil/lsp"
 )
 
 type clearStatusMsg struct{}
@@ -30,12 +32,13 @@ func clearStatusCmd() tea.Cmd {
 type Mode int
 
 const (
-	ModeNormal  Mode = iota
-	ModeComment      // textarea overlay for comment entry
-	ModeInspect      // read-only modal for an existing comment
-	ModeOrphan       // reading/resolving an orphaned comment
-	ModeHelp         // keybinding help overlay
-	ModePicker       // multi-PR picker (handled by pickerModel, not Model)
+	ModeNormal     Mode = iota
+	ModeComment         // textarea overlay for comment entry
+	ModeInspect         // read-only modal for an existing comment
+	ModeOrphan          // reading/resolving an orphaned comment
+	ModeHelp            // keybinding help overlay
+	ModePicker          // multi-PR picker (handled by pickerModel, not Model)
+	ModeDefinition      // full-file read-only viewer for LSP go-to-definition targets
 )
 
 // Model is the Bubbletea model for the diff TUI.
@@ -58,9 +61,13 @@ type Model struct {
 
 	// Navigation metadata (rebuilt on file change / window resize)
 	focusedLine      int
+	focusedCol       int
 	linesMeta        []lineInfo
 	hunkStarts       []int
 	commentPositions []commentPos
+	renderedLines    []string
+	fileNumWidth     int
+	fileExt          string
 
 	// ModeComment state
 	commentTA      textarea.Model
@@ -80,10 +87,43 @@ type Model struct {
 	// storage
 	org      string
 	repoName string
+
+	// worktreePath is the absolute filesystem path of the worktree backing
+	// session.Branch. Empty when no matching worktree is available; LSP and
+	// other path-dependent features must degrade gracefully in that case.
+	worktreePath string
+
+	// LSP state — populated lazily on the first successful gd.
+	lspManager   *lsp.Manager
+	lspReqCancel context.CancelFunc
+
+	// lastKey records the most recent normal-mode key, used for chord
+	// detection (e.g. 'gd' → go-to-definition). Cleared on every non-chord key.
+	lastKey string
+
+	// jumpHistory is a bounded stack of prior locations for ctrl+o.
+	jumpHistory []jumpEntry
+
+	// lineIndex maps file.NewPath → NewLineNum → rendered line idx within
+	// the currently focused file; rebuilt on every rebuildDiffView.
+	lineIndex map[string]map[int32]int
+
+	// ModeDefinition state — a read-only full-file viewer shown when a
+	// go-to-definition target is outside the current diff (see definition.go).
+	defFile       string
+	defLine       int
+	defSymbol     string
+	defVP         viewport.Model
+	defLines      []string
+	defMeta       []lineInfo // reserved for future recursive-gd column data
+	defIsExternal bool
 }
 
 // New creates a new diff TUI Model, loading and orphan-marking comments.
-func New(session *diff.Session, pd *diff.ParsedDiff) Model {
+// worktreePath is the absolute path of the worktree matching session.Branch
+// (empty when unavailable). When set, the model emits a stale-HEAD warning
+// at startup if the worktree's HEAD diverges from session.HeadSHA.
+func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model {
 	org, repoName := splitRepoLocal(session.Repo)
 
 	loaded, _ := diff.LoadComments(org, repoName, session.PRNumber)
@@ -96,21 +136,42 @@ func New(session *diff.Session, pd *diff.ParsedDiff) Model {
 	orphanedIDs := diff.MarkOrphans(comments, pd)
 
 	m := Model{
-		session:  session,
-		pd:       pd,
-		files:    pd.Files,
-		keymap:   DefaultKeyMap(),
-		comments: comments,
-		orphans:  orphanedIDs,
-		org:      org,
-		repoName: repoName,
+		session:      session,
+		pd:           pd,
+		files:        pd.Files,
+		keymap:       DefaultKeyMap(),
+		comments:     comments,
+		orphans:      orphanedIDs,
+		org:          org,
+		repoName:     repoName,
+		worktreePath: worktreePath,
 	}
 
 	if len(orphanedIDs) > 0 {
 		m.statusMsg = fmt.Sprintf("%d orphaned comment(s) — press o to review", len(orphanedIDs))
+	} else if msg := staleHeadWarning(worktreePath, session); msg != "" {
+		m.statusMsg = msg
 	}
 
 	return m
+}
+
+// staleHeadWarning returns a status message when the worktree's HEAD differs
+// from session.HeadSHA. Returns empty string when worktreePath is empty, when
+// git is unavailable, or when HEADs match.
+func staleHeadWarning(worktreePath string, session *diff.Session) string {
+	if worktreePath == "" || session == nil || session.HeadSHA == "" {
+		return ""
+	}
+	out, err := exec.Command("git", "-C", worktreePath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	headSHA := strings.TrimSpace(string(out))
+	if headSHA == "" || headSHA == session.HeadSHA {
+		return ""
+	}
+	return "LSP results may be stale: worktree HEAD differs from session snapshot"
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -120,6 +181,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearStatusMsg:
 		m.statusMsg = ""
 		return m, nil
+
+	case defResultMsg:
+		cmd := m.handleDefResult(msg)
+		return m, cmd
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -140,6 +205,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInspect(msg)
 		case ModeOrphan:
 			return m.updateOrphan(msg)
+		case ModeDefinition:
+			return updateDefinition(&m, msg)
 		default:
 			return m.updateNormal(msg)
 		}
@@ -163,6 +230,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inspectTA, cmd = m.inspectTA.Update(msg)
 		}
 		return m, cmd
+	case ModeDefinition:
+		var cmd tea.Cmd
+		m.defVP, cmd = m.defVP.Update(msg)
+		return m, cmd
 	default:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -171,41 +242,94 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	keyStr := msg.String()
+
+	// 'gd' chord: 'g' records lastKey; subsequent 'd' fires go-to-definition.
+	if keyStr == "g" {
+		m.lastKey = "g"
+		return m, nil
+	}
+	if keyStr == "d" && m.lastKey == "g" {
+		m.lastKey = ""
+		cmd := m.goToDefinition()
+		return m, cmd
+	}
+	// Any other key clears the chord state.
+	m.lastKey = ""
+
 	fl := m.focusedLine
-	switch msg.String() {
+	switch keyStr {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
 	case "j", "down":
 		m.moveLine(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "k", "up":
 		m.moveLine(-1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "J":
 		m.jumpHunk(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "K":
 		m.jumpHunk(-1)
+		m.focusedCol = 0
+		return m, nil
+
+	case "ctrl+d":
+		m.moveLine(halfPage(m.viewport.Height()))
+		m.focusedCol = 0
+		return m, nil
+
+	case "ctrl+u":
+		m.moveLine(-halfPage(m.viewport.Height()))
+		m.focusedCol = 0
 		return m, nil
 
 	case "tab":
 		m.cycleFile(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "shift+tab":
 		m.cycleFile(-1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "n":
 		m.jumpComment(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "N":
 		m.jumpComment(-1)
+		m.focusedCol = 0
+		return m, nil
+
+	case "h":
+		m.moveCursor(-1)
+		return m, nil
+
+	case "l":
+		m.moveCursor(1)
+		return m, nil
+
+	case "w":
+		m.cursorWord(WordNext)
+		return m, nil
+
+	case "b":
+		m.cursorWord(WordPrev)
+		return m, nil
+
+	case "e":
+		m.cursorWord(WordEnd)
 		return m, nil
 
 	case "enter":
@@ -252,6 +376,16 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.enterOrphanMode()
+
+	case "ctrl+]":
+		cmd := m.goToDefinition()
+		return m, cmd
+
+	case "ctrl+o":
+		if !m.popJump() {
+			m.statusMsg = "no previous location"
+		}
+		return m, nil
 
 	case "?":
 		m.mode = ModeHelp
@@ -426,6 +560,10 @@ func (m Model) View() tea.View {
 		v := tea.NewView(renderInspectModal(c, m.inspectTA, m.inspectHunkVP, m.inspectHunkFocus, m.width, m.height))
 		v.AltScreen = true
 		return v
+	case ModeDefinition:
+		v := tea.NewView(viewDefinition(m))
+		v.AltScreen = true
+		return v
 	default:
 		v := tea.NewView(m.buildView())
 		v.AltScreen = true
@@ -455,6 +593,13 @@ func (m Model) buildView() string {
 			return selectionStyle.Width(w)
 		}
 		return lipgloss.NewStyle()
+	}
+
+	if l, ok := m.cursorTargetLine(); ok && len(m.renderedLines) > 0 {
+		overlay := make([]string, len(m.renderedLines))
+		copy(overlay, m.renderedLines)
+		overlay[fl] = renderFocusedLineWithCursor(l, m.fileNumWidth, m.focusedCol)
+		vp.SetContent(strings.Join(overlay, "\n"))
 	}
 
 	switch m.mode {
@@ -491,11 +636,17 @@ func (m *Model) rebuildDiffView() {
 		m.linesMeta = result.linesMeta
 		m.hunkStarts = nil
 		m.commentPositions = nil
+		m.renderedLines = nil
+		m.fileNumWidth = 0
+		m.fileExt = ""
 		m.focusedLine = 0
+		m.focusedCol = 0
+		m.lineIndex = nil
 		return
 	}
 
 	if len(m.files) == 0 {
+		m.lineIndex = nil
 		return
 	}
 
@@ -505,6 +656,11 @@ func (m *Model) rebuildDiffView() {
 	m.linesMeta = result.linesMeta
 	m.hunkStarts = result.hunkStarts
 	m.commentPositions = result.commentPositions
+	m.renderedLines = result.lines
+	m.fileNumWidth = result.numWidth
+	m.fileExt = result.ext
+
+	m.rebuildLineIndex(file)
 
 	if len(m.linesMeta) > 0 && m.focusedLine >= len(m.linesMeta) {
 		m.focusedLine = len(m.linesMeta) - 1
@@ -512,6 +668,85 @@ func (m *Model) rebuildDiffView() {
 
 	m.viewport.SetContent(result.content)
 	m.ensureLineVisible()
+}
+
+// rebuildLineIndex populates m.lineIndex from the current file's linesMeta.
+// Only Add/Context lines (with a NewLineNum > 0) are indexed — these are the
+// lines that a go-to-definition jump can land on.
+func (m *Model) rebuildLineIndex(file diff.ParsedFile) {
+	m.lineIndex = map[string]map[int32]int{}
+	byLine := map[int32]int{}
+	for idx, meta := range m.linesMeta {
+		if meta.isHunkHeader || meta.isComment {
+			continue
+		}
+		if meta.hunkIdx < 0 || meta.hunkIdx >= len(file.Hunks) {
+			continue
+		}
+		hunk := file.Hunks[meta.hunkIdx]
+		if meta.lineInHunk < 0 || meta.lineInHunk >= len(hunk.Lines) {
+			continue
+		}
+		l := hunk.Lines[meta.lineInHunk]
+		if l.Kind == diff.LineDelete || l.NewLineNum <= 0 {
+			continue
+		}
+		if _, exists := byLine[l.NewLineNum]; !exists {
+			byLine[l.NewLineNum] = idx
+		}
+	}
+	if len(byLine) > 0 {
+		m.lineIndex[file.NewPath] = byLine
+	}
+}
+
+// cursorTargetLine returns the parsed diff line under the cursor, plus ok=true,
+// only if the focused line is a renderable diff line (not a hunk header or
+// inline comment marker). The cursor is hidden and motion is a no-op otherwise.
+func (m *Model) cursorTargetLine() (diff.ParsedLine, bool) {
+	if m.fileIdx < 0 || m.fileIdx >= len(m.files) {
+		return diff.ParsedLine{}, false
+	}
+	if m.focusedLine < 0 || m.focusedLine >= len(m.linesMeta) {
+		return diff.ParsedLine{}, false
+	}
+	meta := m.linesMeta[m.focusedLine]
+	if meta.isHunkHeader || meta.isComment {
+		return diff.ParsedLine{}, false
+	}
+	if meta.hunkIdx < 0 || meta.hunkIdx >= len(m.files[m.fileIdx].Hunks) {
+		return diff.ParsedLine{}, false
+	}
+	hunk := m.files[m.fileIdx].Hunks[meta.hunkIdx]
+	if meta.lineInHunk < 0 || meta.lineInHunk >= len(hunk.Lines) {
+		return diff.ParsedLine{}, false
+	}
+	return hunk.Lines[meta.lineInHunk], true
+}
+
+func (m *Model) moveCursor(delta int) {
+	l, ok := m.cursorTargetLine()
+	if !ok {
+		return
+	}
+	maxCol := len([]rune(l.Text)) - 1
+	if maxCol < 0 {
+		m.focusedCol = 0
+		return
+	}
+	m.focusedCol = clamp(m.focusedCol+delta, 0, maxCol)
+}
+
+func (m *Model) cursorWord(jump func(string, int) int) {
+	l, ok := m.cursorTargetLine()
+	if !ok {
+		return
+	}
+	if len([]rune(l.Text)) == 0 {
+		m.focusedCol = 0
+		return
+	}
+	m.focusedCol = jump(l.Text, m.focusedCol)
 }
 
 func (m *Model) viewportHeight() int {
@@ -542,6 +777,13 @@ func fileListHeight(fileCount int) int {
 		return visible + 2 // entries + separator + nav hint
 	}
 	return visible + 1 // entry + separator
+}
+
+func halfPage(height int) int {
+	if height < 2 {
+		return 1
+	}
+	return height / 2
 }
 
 func (m *Model) moveLine(delta int) {
@@ -991,6 +1233,7 @@ func (m Model) findComment(id string) *diff.Comment {
 
 func (m Model) FileIdx() int      { return m.fileIdx }
 func (m Model) FocusedLine() int  { return m.focusedLine }
+func (m Model) FocusedCol() int   { return m.focusedCol }
 func (m Model) CurrentMode() Mode { return m.mode }
 func (m Model) StatusMsg() string { return m.statusMsg }
 
