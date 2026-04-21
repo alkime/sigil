@@ -110,7 +110,7 @@ func setupModel(t *testing.T) dtui.Model {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	session := makeSession()
 	pd := makeParsedDiff()
-	m := dtui.New(session, pd)
+	m := dtui.New(session, pd, "")
 	out, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	return out.(dtui.Model)
 }
@@ -125,7 +125,7 @@ func TestNew_initialState(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	session := makeSession()
 	pd := makeParsedDiff()
-	m := dtui.New(session, pd)
+	m := dtui.New(session, pd, "")
 
 	if m.FileIdx() != 0 {
 		t.Errorf("fileIdx = %d, want 0", m.FileIdx())
@@ -283,7 +283,7 @@ func TestComment_nonCommentableFile(t *testing.T) {
 			{OldPath: "a/old.go", NewPath: "/dev/null", IsDelete: true},
 		},
 	}
-	m := dtui.New(session, pd)
+	m := dtui.New(session, pd, "")
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m3 := send(m2, "c").(dtui.Model)
 

@@ -80,10 +80,18 @@ type Model struct {
 	// storage
 	org      string
 	repoName string
+
+	// worktreePath is the absolute filesystem path of the worktree backing
+	// session.Branch. Empty when no matching worktree is available; LSP and
+	// other path-dependent features must degrade gracefully in that case.
+	worktreePath string
 }
 
 // New creates a new diff TUI Model, loading and orphan-marking comments.
-func New(session *diff.Session, pd *diff.ParsedDiff) Model {
+// worktreePath is the absolute path of the worktree matching session.Branch
+// (empty when unavailable). When set, the model emits a stale-HEAD warning
+// at startup if the worktree's HEAD diverges from session.HeadSHA.
+func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model {
 	org, repoName := splitRepoLocal(session.Repo)
 
 	loaded, _ := diff.LoadComments(org, repoName, session.PRNumber)
@@ -96,21 +104,42 @@ func New(session *diff.Session, pd *diff.ParsedDiff) Model {
 	orphanedIDs := diff.MarkOrphans(comments, pd)
 
 	m := Model{
-		session:  session,
-		pd:       pd,
-		files:    pd.Files,
-		keymap:   DefaultKeyMap(),
-		comments: comments,
-		orphans:  orphanedIDs,
-		org:      org,
-		repoName: repoName,
+		session:      session,
+		pd:           pd,
+		files:        pd.Files,
+		keymap:       DefaultKeyMap(),
+		comments:     comments,
+		orphans:      orphanedIDs,
+		org:          org,
+		repoName:     repoName,
+		worktreePath: worktreePath,
 	}
 
 	if len(orphanedIDs) > 0 {
 		m.statusMsg = fmt.Sprintf("%d orphaned comment(s) — press o to review", len(orphanedIDs))
+	} else if msg := staleHeadWarning(worktreePath, session); msg != "" {
+		m.statusMsg = msg
 	}
 
 	return m
+}
+
+// staleHeadWarning returns a status message when the worktree's HEAD differs
+// from session.HeadSHA. Returns empty string when worktreePath is empty, when
+// git is unavailable, or when HEADs match.
+func staleHeadWarning(worktreePath string, session *diff.Session) string {
+	if worktreePath == "" || session == nil || session.HeadSHA == "" {
+		return ""
+	}
+	out, err := exec.Command("git", "-C", worktreePath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	headSHA := strings.TrimSpace(string(out))
+	if headSHA == "" || headSHA == session.HeadSHA {
+		return ""
+	}
+	return "LSP results may be stale: worktree HEAD differs from session snapshot"
 }
 
 func (m Model) Init() tea.Cmd { return nil }

@@ -31,7 +31,7 @@ func (c *DiffUnresolveCmd) Run(ctx *CLIContext) error {
 }
 
 func setDiffCommentResolved(ctx *CLIContext, ids []string, resolved bool) error {
-	session, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
+	session, _, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
 		SessionID:    ctx.DiffSession,
 		IncludeDraft: ctx.DiffDraft,
 	})
