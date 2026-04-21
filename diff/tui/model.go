@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/alkime/sigil/diff"
+	"github.com/alkime/sigil/lsp"
 )
 
 type clearStatusMsg struct{}
@@ -89,6 +91,21 @@ type Model struct {
 	// session.Branch. Empty when no matching worktree is available; LSP and
 	// other path-dependent features must degrade gracefully in that case.
 	worktreePath string
+
+	// LSP state — populated lazily on the first successful gd.
+	lspManager   *lsp.Manager
+	lspReqCancel context.CancelFunc
+
+	// lastKey records the most recent normal-mode key, used for chord
+	// detection (e.g. 'gg' → go-to-definition). Cleared on every non-chord key.
+	lastKey string
+
+	// jumpHistory is a bounded stack of prior locations for ctrl+o.
+	jumpHistory []jumpEntry
+
+	// lineIndex maps file.NewPath → NewLineNum → rendered line idx within
+	// the currently focused file; rebuilt on every rebuildDiffView.
+	lineIndex map[string]map[int32]int
 }
 
 // New creates a new diff TUI Model, loading and orphan-marking comments.
@@ -154,6 +171,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = ""
 		return m, nil
 
+	case defResultMsg:
+		cmd := m.handleDefResult(msg)
+		return m, cmd
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -204,8 +225,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	keyStr := msg.String()
+
+	// 'gg' chord: first g records lastKey; second g fires go-to-definition.
+	if keyStr == "g" {
+		if m.lastKey == "g" {
+			m.lastKey = ""
+			cmd := m.goToDefinition()
+			return m, cmd
+		}
+		m.lastKey = "g"
+		return m, nil
+	}
+	// Any other key clears the chord state.
+	m.lastKey = ""
+
 	fl := m.focusedLine
-	switch msg.String() {
+	switch keyStr {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
@@ -313,6 +349,16 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.enterOrphanMode()
+
+	case "ctrl+]":
+		cmd := m.goToDefinition()
+		return m, cmd
+
+	case "ctrl+o":
+		if !m.popJump() {
+			m.statusMsg = "no previous location"
+		}
+		return m, nil
 
 	case "?":
 		m.mode = ModeHelp
@@ -564,10 +610,12 @@ func (m *Model) rebuildDiffView() {
 		m.fileExt = ""
 		m.focusedLine = 0
 		m.focusedCol = 0
+		m.lineIndex = nil
 		return
 	}
 
 	if len(m.files) == 0 {
+		m.lineIndex = nil
 		return
 	}
 
@@ -581,12 +629,44 @@ func (m *Model) rebuildDiffView() {
 	m.fileNumWidth = result.numWidth
 	m.fileExt = result.ext
 
+	m.rebuildLineIndex(file)
+
 	if len(m.linesMeta) > 0 && m.focusedLine >= len(m.linesMeta) {
 		m.focusedLine = len(m.linesMeta) - 1
 	}
 
 	m.viewport.SetContent(result.content)
 	m.ensureLineVisible()
+}
+
+// rebuildLineIndex populates m.lineIndex from the current file's linesMeta.
+// Only Add/Context lines (with a NewLineNum > 0) are indexed — these are the
+// lines that a go-to-definition jump can land on.
+func (m *Model) rebuildLineIndex(file diff.ParsedFile) {
+	m.lineIndex = map[string]map[int32]int{}
+	byLine := map[int32]int{}
+	for idx, meta := range m.linesMeta {
+		if meta.isHunkHeader || meta.isComment {
+			continue
+		}
+		if meta.hunkIdx < 0 || meta.hunkIdx >= len(file.Hunks) {
+			continue
+		}
+		hunk := file.Hunks[meta.hunkIdx]
+		if meta.lineInHunk < 0 || meta.lineInHunk >= len(hunk.Lines) {
+			continue
+		}
+		l := hunk.Lines[meta.lineInHunk]
+		if l.Kind == diff.LineDelete || l.NewLineNum <= 0 {
+			continue
+		}
+		if _, exists := byLine[l.NewLineNum]; !exists {
+			byLine[l.NewLineNum] = idx
+		}
+	}
+	if len(byLine) > 0 {
+		m.lineIndex[file.NewPath] = byLine
+	}
 }
 
 // cursorTargetLine returns the parsed diff line under the cursor, plus ok=true,
