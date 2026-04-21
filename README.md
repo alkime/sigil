@@ -195,12 +195,30 @@ sigil diff unresolve-comments <id>                  # reopen
 | `Enter` | Open / edit the comment under the cursor |
 | `r` / `u` | Resolve / unresolve focused comment |
 | `o` | Cycle through orphaned comments |
+| `h` / `l` | Move the column cursor on the focused line |
+| `w` / `b` / `e` | Word-motion cursor (next / previous / end) |
+| `gg` / `Ctrl+]` | Go to definition of the symbol under the cursor |
+| `Ctrl+o` | Jump back to the previous location |
 | `?` | Toggle keybinding help |
 | `q` | Quit |
+
+### Go to definition
+
+Place the column cursor on a symbol with `h/l/w/b/e`, then press `gg` (or `Ctrl+]`) to jump to its definition.
+
+- **In-diff target** — the viewport scrolls to and highlights the definition line.
+- **Out-of-diff target** — opens a read-only full-file viewer; `q` or `Esc` returns to the diff. Inside the viewer, `j/k/J/K` scroll, `h/l/w/b/e` move the cursor, and `gg` recurses.
+- **`Ctrl+o`** — pops the jump-history stack and returns to the previous location.
+
+Requires `gopls` on your `PATH`. Only Go (`.go`) files are supported today; TypeScript and Python are planned.
+
+If the worktree's `HEAD` differs from the diff snapshot, the status bar shows `LSP results may be stale: worktree HEAD differs from session snapshot` — definitions are always resolved against the current on-disk state.
 
 ### Requirements
 
 `gh` CLI must be installed and authenticated (`gh auth login`). Comments are stored under `$XDG_DATA_HOME/sigil/diffs/` (default: `~/.local/share/sigil/diffs/`).
+
+Go-to-definition additionally requires [`gopls`](https://pkg.go.dev/golang.org/x/tools/gopls) on your `PATH` (`go install golang.org/x/tools/gopls@latest`).
 
 ### LLM agent workflow
 
