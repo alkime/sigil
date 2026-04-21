@@ -193,17 +193,17 @@ func (m *Model) handleDefResult(msg defResultMsg) tea.Cmd {
 	if len(msg.locations) > 1 {
 		m.statusMsg = fmt.Sprintf("%d definitions found; jumping to first", len(msg.locations))
 	}
-	m.dispatchLocation(msg.locations[0], msg.sym)
-	return nil
+	return m.dispatchLocation(msg.locations[0], msg.sym)
 }
 
 // dispatchLocation routes a resolved location either to an in-diff scroll or
-// to the out-of-diff ModeDefinition viewer.
-func (m *Model) dispatchLocation(loc lsp.Location, sym string) {
+// to the out-of-diff ModeDefinition viewer. Returns a tea.Cmd to clear the
+// status line after a successful in-diff jump.
+func (m *Model) dispatchLocation(loc lsp.Location, sym string) tea.Cmd {
 	absPath := uriToPath(loc.URI)
 	if absPath == "" {
 		m.statusMsg = "invalid definition URI"
-		return
+		return clearStatusCmd()
 	}
 	newLineNum := int32(loc.Range.Start.Line + 1)
 
@@ -216,11 +216,12 @@ func (m *Model) dispatchLocation(loc lsp.Location, sym string) {
 
 	if relPath != "" && !strings.HasPrefix(relPath, "..") {
 		if m.jumpToInDiff(relPath, newLineNum) {
-			return
+			return clearStatusCmd()
 		}
 	}
 
 	openDefinition(m, loc, sym)
+	return nil
 }
 
 // jumpToInDiff attempts to locate (relPath, newLineNum) in the current diff
