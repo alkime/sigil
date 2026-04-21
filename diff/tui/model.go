@@ -32,12 +32,13 @@ func clearStatusCmd() tea.Cmd {
 type Mode int
 
 const (
-	ModeNormal  Mode = iota
-	ModeComment      // textarea overlay for comment entry
-	ModeInspect      // read-only modal for an existing comment
-	ModeOrphan       // reading/resolving an orphaned comment
-	ModeHelp         // keybinding help overlay
-	ModePicker       // multi-PR picker (handled by pickerModel, not Model)
+	ModeNormal     Mode = iota
+	ModeComment         // textarea overlay for comment entry
+	ModeInspect         // read-only modal for an existing comment
+	ModeOrphan          // reading/resolving an orphaned comment
+	ModeHelp            // keybinding help overlay
+	ModePicker          // multi-PR picker (handled by pickerModel, not Model)
+	ModeDefinition      // full-file read-only viewer for LSP go-to-definition targets
 )
 
 // Model is the Bubbletea model for the diff TUI.
@@ -106,6 +107,16 @@ type Model struct {
 	// lineIndex maps file.NewPath → NewLineNum → rendered line idx within
 	// the currently focused file; rebuilt on every rebuildDiffView.
 	lineIndex map[string]map[int32]int
+
+	// ModeDefinition state — a read-only full-file viewer shown when a
+	// go-to-definition target is outside the current diff (see definition.go).
+	defFile       string
+	defLine       int
+	defSymbol     string
+	defVP         viewport.Model
+	defLines      []string
+	defMeta       []lineInfo // reserved for future recursive-gd column data
+	defIsExternal bool
 }
 
 // New creates a new diff TUI Model, loading and orphan-marking comments.
@@ -194,6 +205,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInspect(msg)
 		case ModeOrphan:
 			return m.updateOrphan(msg)
+		case ModeDefinition:
+			return updateDefinition(&m, msg)
 		default:
 			return m.updateNormal(msg)
 		}
@@ -216,6 +229,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.inspectTA, cmd = m.inspectTA.Update(msg)
 		}
+		return m, cmd
+	case ModeDefinition:
+		var cmd tea.Cmd
+		m.defVP, cmd = m.defVP.Update(msg)
 		return m, cmd
 	default:
 		var cmd tea.Cmd
@@ -531,6 +548,10 @@ func (m Model) View() tea.View {
 	case ModeInspect:
 		c := m.findComment(m.inspectID)
 		v := tea.NewView(renderInspectModal(c, m.inspectTA, m.inspectHunkVP, m.inspectHunkFocus, m.width, m.height))
+		v.AltScreen = true
+		return v
+	case ModeDefinition:
+		v := tea.NewView(viewDefinition(m))
 		v.AltScreen = true
 		return v
 	default:
