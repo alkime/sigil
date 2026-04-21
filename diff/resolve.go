@@ -43,32 +43,33 @@ type snapshotMeta struct {
 	HeadCommitMessage string    `yaml:"head_commit_message"`
 }
 
-// Resolve finds or creates a diff session from opts, returning the session and its latest diff.
-func Resolve(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, error) {
+// Resolve finds or creates a diff session from opts, returning the session,
+// its latest diff, and the absolute worktree path (empty when unavailable).
+func Resolve(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, string, error) {
 	if opts.SessionID != "" {
-		return loadSessionByID(ctx, opts.SessionID)
+		return loadSessionByID(ctx, opts)
 	}
 	return autoDetect(ctx, opts)
 }
 
-func autoDetect(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, error) {
+func autoDetect(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, string, error) {
 	cwd := opts.CWD
 	if cwd == "" {
 		var err error
 		cwd, err = os.Getwd()
 		if err != nil {
-			return nil, nil, fmt.Errorf("get working directory: %w", err)
+			return nil, nil, "", fmt.Errorf("get working directory: %w", err)
 		}
 	}
 
 	worktrees, err := listWorktrees(ctx, cwd)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list worktrees: %w", err)
+		return nil, nil, "", fmt.Errorf("list worktrees: %w", err)
 	}
 
 	_, owner, repoName, err := OriginRemote(ctx, cwd)
 	if err != nil {
-		return nil, nil, fmt.Errorf("origin remote: %w", err)
+		return nil, nil, "", fmt.Errorf("origin remote: %w", err)
 	}
 	repo := owner + "/" + repoName
 
@@ -101,33 +102,33 @@ func autoDetect(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, e
 	}
 
 	if len(candidates) == 0 {
-		return nil, nil, fmt.Errorf("no open PRs found across worktrees — create one with: gh pr create")
+		return nil, nil, "", fmt.Errorf("no open PRs found across worktrees — create one with: gh pr create")
 	}
 	if len(candidates) > 1 {
-		return nil, nil, &ErrPickerNeeded{Candidates: candidates}
+		return nil, nil, "", &ErrPickerNeeded{Candidates: candidates}
 	}
 
 	return resolveCandidate(ctx, candidates[0], owner, repoName)
 }
 
-func resolveCandidate(ctx context.Context, c PRCandidate, org, repoName string) (*Session, *ParsedDiff, error) {
+func resolveCandidate(ctx context.Context, c PRCandidate, org, repoName string) (*Session, *ParsedDiff, string, error) {
 	headSHA, err := revParse(ctx, c.WorktreePath, "HEAD")
 	if err != nil {
-		return nil, nil, fmt.Errorf("get head SHA: %w", err)
+		return nil, nil, "", fmt.Errorf("get head SHA: %w", err)
 	}
 
 	session, err := LoadSession(org, repoName, c.PRNumber)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load session: %w", err)
+		return nil, nil, "", fmt.Errorf("load session: %w", err)
 	}
 
 	if session != nil {
 		if session.HeadSHA == headSHA {
 			pd, pdErr := loadLatestSnapshotDiff(session, org, repoName)
 			if pdErr != nil {
-				return nil, nil, pdErr
+				return nil, nil, "", pdErr
 			}
-			return session, pd, nil
+			return session, pd, c.WorktreePath, nil
 		}
 		return captureNewSnapshot(ctx, session, c, org, repoName, headSHA)
 	}
@@ -135,7 +136,7 @@ func resolveCandidate(ctx context.Context, c PRCandidate, org, repoName string) 
 	return createSession(ctx, c, org, repoName, headSHA)
 }
 
-func createSession(ctx context.Context, c PRCandidate, org, repoName, headSHA string) (*Session, *ParsedDiff, error) {
+func createSession(ctx context.Context, c PRCandidate, org, repoName, headSHA string) (*Session, *ParsedDiff, string, error) {
 	baseSHA := getBaseSHA(ctx, c.WorktreePath, c.BaseRefName)
 	now := time.Now().UTC()
 
@@ -154,36 +155,36 @@ func createSession(ctx context.Context, c PRCandidate, org, repoName, headSHA st
 
 	pd, err := captureSnapshot(ctx, session, c, org, repoName, baseSHA, headSHA)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	if err := SaveSession(org, repoName, c.PRNumber, session); err != nil {
-		return nil, nil, fmt.Errorf("save session: %w", err)
+		return nil, nil, "", fmt.Errorf("save session: %w", err)
 	}
 	if err := upsertIndex(org, repoName, session); err != nil {
-		return nil, nil, fmt.Errorf("upsert index: %w", err)
+		return nil, nil, "", fmt.Errorf("upsert index: %w", err)
 	}
 
-	return session, pd, nil
+	return session, pd, c.WorktreePath, nil
 }
 
-func captureNewSnapshot(ctx context.Context, session *Session, c PRCandidate, org, repoName, headSHA string) (*Session, *ParsedDiff, error) {
+func captureNewSnapshot(ctx context.Context, session *Session, c PRCandidate, org, repoName, headSHA string) (*Session, *ParsedDiff, string, error) {
 	pd, err := captureSnapshot(ctx, session, c, org, repoName, session.BaseSHA, headSHA)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	session.HeadSHA = headSHA
 	session.UpdatedAt = time.Now().UTC()
 
 	if err := SaveSession(org, repoName, c.PRNumber, session); err != nil {
-		return nil, nil, fmt.Errorf("save session: %w", err)
+		return nil, nil, "", fmt.Errorf("save session: %w", err)
 	}
 	if err := upsertIndex(org, repoName, session); err != nil {
-		return nil, nil, fmt.Errorf("upsert index: %w", err)
+		return nil, nil, "", fmt.Errorf("upsert index: %w", err)
 	}
 
-	return session, pd, nil
+	return session, pd, c.WorktreePath, nil
 }
 
 func captureSnapshot(ctx context.Context, session *Session, c PRCandidate, org, repoName, baseSHA, headSHA string) (*ParsedDiff, error) {
@@ -236,10 +237,11 @@ func loadLatestSnapshotDiff(session *Session, org, repoName string) (*ParsedDiff
 	return Parse(diffBytes)
 }
 
-func loadSessionByID(ctx context.Context, id string) (*Session, *ParsedDiff, error) {
+func loadSessionByID(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, string, error) {
+	id := opts.SessionID
 	base := BasePath()
 	if _, err := os.Stat(base); os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("session %s not found", id)
+		return nil, nil, "", fmt.Errorf("session %s not found", id)
 	}
 
 	var found *Session
@@ -270,17 +272,37 @@ func loadSessionByID(ctx context.Context, id string) (*Session, *ParsedDiff, err
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("searching sessions: %w", err)
+		return nil, nil, "", fmt.Errorf("searching sessions: %w", err)
 	}
 	if found == nil {
-		return nil, nil, fmt.Errorf("session %s not found", id)
+		return nil, nil, "", fmt.Errorf("session %s not found", id)
 	}
 
 	pd, err := loadLatestSnapshotDiff(found, foundOrg, foundRepo)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	return found, pd, nil
+
+	workspaceDir := findWorktreeForBranch(ctx, opts.CWD, found.Branch)
+	return found, pd, workspaceDir, nil
+}
+
+// findWorktreeForBranch returns the absolute path of the worktree whose branch
+// matches the given branch name, or "" when no match exists.
+func findWorktreeForBranch(ctx context.Context, cwd, branch string) string {
+	if branch == "" {
+		return ""
+	}
+	wts, err := listWorktrees(ctx, cwd)
+	if err != nil {
+		return ""
+	}
+	for _, wt := range wts {
+		if wt.Branch == branch {
+			return wt.Path
+		}
+	}
+	return ""
 }
 
 func upsertIndex(org, repoName string, session *Session) error {

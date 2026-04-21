@@ -108,7 +108,7 @@ func TestResolve_newSession(t *testing.T) {
 	repoDir, _, _ := setupTestRepo(t)
 	setupMultiCmdGH(t, samplePRListJSON, sampleDiff)
 
-	session, pd, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	session, pd, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -151,14 +151,14 @@ func TestResolve_existingSession_sameHead(t *testing.T) {
 	setupMultiCmdGH(t, samplePRListJSON, sampleDiff)
 
 	// First resolve creates the session.
-	first, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	first, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("first Resolve: %v", err)
 	}
 	firstID := first.ID
 
 	// Second resolve with same HEAD should not create a new snapshot.
-	second, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	second, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("second Resolve: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestResolve_existingSession_newHead(t *testing.T) {
 	setupMultiCmdGH(t, samplePRListJSON, sampleDiff)
 
 	// First resolve.
-	_, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	_, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("first Resolve: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestResolve_existingSession_newHead(t *testing.T) {
 	runGitCmd(t, repoDir, "commit", "-m", "add bar.go")
 
 	// Second resolve with new HEAD should capture a new snapshot.
-	second, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	second, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("second Resolve: %v", err)
 	}
@@ -206,13 +206,13 @@ func TestResolve_bySessionID(t *testing.T) {
 	setupMultiCmdGH(t, samplePRListJSON, sampleDiff)
 
 	// Create session via auto-detect.
-	created, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	created, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err != nil {
 		t.Fatalf("auto-detect Resolve: %v", err)
 	}
 
 	// Reload by session ID.
-	loaded, _, err := Resolve(context.Background(), ResolveOpts{SessionID: created.ID})
+	loaded, _, _, err := Resolve(context.Background(), ResolveOpts{SessionID: created.ID})
 	if err != nil {
 		t.Fatalf("Resolve by ID: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestResolve_noPRs(t *testing.T) {
 	repoDir, _, _ := setupTestRepo(t)
 	setupMultiCmdGH(t, "[]", sampleDiff)
 
-	_, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	_, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	if err == nil || !containsStr(err.Error(), "no open PRs") {
 		t.Errorf("expected 'no open PRs' error, got: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestResolve_multiplePRs(t *testing.T) {
 		`{"number":2,"title":"PR Two","baseRefName":"main","isDraft":false,"headRefName":"feature/my-pr"}]`
 	setupMultiCmdGH(t, multiJSON, sampleDiff)
 
-	_, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
+	_, _, _, err := Resolve(context.Background(), ResolveOpts{CWD: repoDir})
 	var pickerErr *ErrPickerNeeded
 	if !errors.As(err, &pickerErr) {
 		t.Errorf("expected ErrPickerNeeded, got: %v", err)

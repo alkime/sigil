@@ -58,9 +58,13 @@ type Model struct {
 
 	// Navigation metadata (rebuilt on file change / window resize)
 	focusedLine      int
+	focusedCol       int
 	linesMeta        []lineInfo
 	hunkStarts       []int
 	commentPositions []commentPos
+	renderedLines    []string
+	fileNumWidth     int
+	fileExt          string
 
 	// ModeComment state
 	commentTA      textarea.Model
@@ -80,10 +84,18 @@ type Model struct {
 	// storage
 	org      string
 	repoName string
+
+	// worktreePath is the absolute filesystem path of the worktree backing
+	// session.Branch. Empty when no matching worktree is available; LSP and
+	// other path-dependent features must degrade gracefully in that case.
+	worktreePath string
 }
 
 // New creates a new diff TUI Model, loading and orphan-marking comments.
-func New(session *diff.Session, pd *diff.ParsedDiff) Model {
+// worktreePath is the absolute path of the worktree matching session.Branch
+// (empty when unavailable). When set, the model emits a stale-HEAD warning
+// at startup if the worktree's HEAD diverges from session.HeadSHA.
+func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model {
 	org, repoName := splitRepoLocal(session.Repo)
 
 	loaded, _ := diff.LoadComments(org, repoName, session.PRNumber)
@@ -96,21 +108,42 @@ func New(session *diff.Session, pd *diff.ParsedDiff) Model {
 	orphanedIDs := diff.MarkOrphans(comments, pd)
 
 	m := Model{
-		session:  session,
-		pd:       pd,
-		files:    pd.Files,
-		keymap:   DefaultKeyMap(),
-		comments: comments,
-		orphans:  orphanedIDs,
-		org:      org,
-		repoName: repoName,
+		session:      session,
+		pd:           pd,
+		files:        pd.Files,
+		keymap:       DefaultKeyMap(),
+		comments:     comments,
+		orphans:      orphanedIDs,
+		org:          org,
+		repoName:     repoName,
+		worktreePath: worktreePath,
 	}
 
 	if len(orphanedIDs) > 0 {
 		m.statusMsg = fmt.Sprintf("%d orphaned comment(s) — press o to review", len(orphanedIDs))
+	} else if msg := staleHeadWarning(worktreePath, session); msg != "" {
+		m.statusMsg = msg
 	}
 
 	return m
+}
+
+// staleHeadWarning returns a status message when the worktree's HEAD differs
+// from session.HeadSHA. Returns empty string when worktreePath is empty, when
+// git is unavailable, or when HEADs match.
+func staleHeadWarning(worktreePath string, session *diff.Session) string {
+	if worktreePath == "" || session == nil || session.HeadSHA == "" {
+		return ""
+	}
+	out, err := exec.Command("git", "-C", worktreePath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	headSHA := strings.TrimSpace(string(out))
+	if headSHA == "" || headSHA == session.HeadSHA {
+		return ""
+	}
+	return "LSP results may be stale: worktree HEAD differs from session snapshot"
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -178,34 +211,62 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "j", "down":
 		m.moveLine(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "k", "up":
 		m.moveLine(-1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "J":
 		m.jumpHunk(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "K":
 		m.jumpHunk(-1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "tab":
 		m.cycleFile(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "shift+tab":
 		m.cycleFile(-1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "n":
 		m.jumpComment(1)
+		m.focusedCol = 0
 		return m, nil
 
 	case "N":
 		m.jumpComment(-1)
+		m.focusedCol = 0
+		return m, nil
+
+	case "h":
+		m.moveCursor(-1)
+		return m, nil
+
+	case "l":
+		m.moveCursor(1)
+		return m, nil
+
+	case "w":
+		m.cursorWord(WordNext)
+		return m, nil
+
+	case "b":
+		m.cursorWord(WordPrev)
+		return m, nil
+
+	case "e":
+		m.cursorWord(WordEnd)
 		return m, nil
 
 	case "enter":
@@ -457,6 +518,13 @@ func (m Model) buildView() string {
 		return lipgloss.NewStyle()
 	}
 
+	if l, ok := m.cursorTargetLine(); ok && len(m.renderedLines) > 0 {
+		overlay := make([]string, len(m.renderedLines))
+		copy(overlay, m.renderedLines)
+		overlay[fl] = renderFocusedLineWithCursor(l, m.fileNumWidth, m.focusedCol)
+		vp.SetContent(strings.Join(overlay, "\n"))
+	}
+
 	switch m.mode {
 	case ModeOrphan:
 		parts = append(parts, m.orphanVP.View())
@@ -491,7 +559,11 @@ func (m *Model) rebuildDiffView() {
 		m.linesMeta = result.linesMeta
 		m.hunkStarts = nil
 		m.commentPositions = nil
+		m.renderedLines = nil
+		m.fileNumWidth = 0
+		m.fileExt = ""
 		m.focusedLine = 0
+		m.focusedCol = 0
 		return
 	}
 
@@ -505,6 +577,9 @@ func (m *Model) rebuildDiffView() {
 	m.linesMeta = result.linesMeta
 	m.hunkStarts = result.hunkStarts
 	m.commentPositions = result.commentPositions
+	m.renderedLines = result.lines
+	m.fileNumWidth = result.numWidth
+	m.fileExt = result.ext
 
 	if len(m.linesMeta) > 0 && m.focusedLine >= len(m.linesMeta) {
 		m.focusedLine = len(m.linesMeta) - 1
@@ -512,6 +587,55 @@ func (m *Model) rebuildDiffView() {
 
 	m.viewport.SetContent(result.content)
 	m.ensureLineVisible()
+}
+
+// cursorTargetLine returns the parsed diff line under the cursor, plus ok=true,
+// only if the focused line is a renderable diff line (not a hunk header or
+// inline comment marker). The cursor is hidden and motion is a no-op otherwise.
+func (m *Model) cursorTargetLine() (diff.ParsedLine, bool) {
+	if m.fileIdx < 0 || m.fileIdx >= len(m.files) {
+		return diff.ParsedLine{}, false
+	}
+	if m.focusedLine < 0 || m.focusedLine >= len(m.linesMeta) {
+		return diff.ParsedLine{}, false
+	}
+	meta := m.linesMeta[m.focusedLine]
+	if meta.isHunkHeader || meta.isComment {
+		return diff.ParsedLine{}, false
+	}
+	if meta.hunkIdx < 0 || meta.hunkIdx >= len(m.files[m.fileIdx].Hunks) {
+		return diff.ParsedLine{}, false
+	}
+	hunk := m.files[m.fileIdx].Hunks[meta.hunkIdx]
+	if meta.lineInHunk < 0 || meta.lineInHunk >= len(hunk.Lines) {
+		return diff.ParsedLine{}, false
+	}
+	return hunk.Lines[meta.lineInHunk], true
+}
+
+func (m *Model) moveCursor(delta int) {
+	l, ok := m.cursorTargetLine()
+	if !ok {
+		return
+	}
+	maxCol := len([]rune(l.Text)) - 1
+	if maxCol < 0 {
+		m.focusedCol = 0
+		return
+	}
+	m.focusedCol = clamp(m.focusedCol+delta, 0, maxCol)
+}
+
+func (m *Model) cursorWord(jump func(string, int) int) {
+	l, ok := m.cursorTargetLine()
+	if !ok {
+		return
+	}
+	if len([]rune(l.Text)) == 0 {
+		m.focusedCol = 0
+		return
+	}
+	m.focusedCol = jump(l.Text, m.focusedCol)
 }
 
 func (m *Model) viewportHeight() int {
@@ -991,6 +1115,7 @@ func (m Model) findComment(id string) *diff.Comment {
 
 func (m Model) FileIdx() int      { return m.fileIdx }
 func (m Model) FocusedLine() int  { return m.focusedLine }
+func (m Model) FocusedCol() int   { return m.focusedCol }
 func (m Model) CurrentMode() Mode { return m.mode }
 func (m Model) StatusMsg() string { return m.statusMsg }
 

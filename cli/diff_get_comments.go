@@ -16,7 +16,7 @@ type DiffGetCommentsCmd struct {
 
 // Run resolves the session and prints matching comments as plain-text blocks.
 func (c *DiffGetCommentsCmd) Run(ctx *CLIContext) error {
-	session, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
+	session, _, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
 		SessionID:    ctx.DiffSession,
 		IncludeDraft: ctx.DiffDraft,
 	})
