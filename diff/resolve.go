@@ -52,6 +52,17 @@ func Resolve(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, stri
 	return autoDetect(ctx, opts)
 }
 
+// ResolvePicked resolves a specific PR after the user has chosen one from the
+// picker. Use this instead of Resolve to avoid re-triggering auto-detection
+// (which would return ErrPickerNeeded again for the same multi-PR situation).
+func ResolvePicked(ctx context.Context, c PRCandidate) (*Session, *ParsedDiff, string, error) {
+	parts := strings.SplitN(c.Repo, "/", 2)
+	if len(parts) != 2 {
+		return nil, nil, "", fmt.Errorf("invalid repo %q in picked candidate", c.Repo)
+	}
+	return resolveCandidate(ctx, c, parts[0], parts[1])
+}
+
 func autoDetect(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, string, error) {
 	cwd := opts.CWD
 	if cwd == "" {

@@ -30,15 +30,7 @@ func RunWithResolve(ctx context.Context, opts diff.ResolveOpts) error {
 			if pickErr != nil {
 				return fmt.Errorf("picker: %w", pickErr)
 			}
-			opts.SessionID = chosen.WorktreePath // use worktree to re-detect
-			// Re-resolve with a specific session if we can identify it — for now
-			// just set a marker and retry (the session won't exist yet; let Resolve create it).
-			// Use the branch from the chosen candidate as a hint.
-			opts2 := diff.ResolveOpts{
-				IncludeDraft: opts.IncludeDraft,
-				CWD:          chosen.WorktreePath,
-			}
-			session, pd, workspaceDir, err = diff.Resolve(ctx, opts2)
+			session, pd, workspaceDir, err = diff.ResolvePicked(ctx, chosen)
 			if err != nil {
 				return fmt.Errorf("resolve after pick: %w", err)
 			}
