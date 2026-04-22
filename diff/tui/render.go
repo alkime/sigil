@@ -239,7 +239,7 @@ func renderHeader(session *diff.Session, fileCount int) string {
 
 // renderFileList renders the file navigation list.
 // fileIdx == -1 means the virtual "PR Comments" entry is active.
-const maxVisibleFiles = 5
+const maxVisibleFiles = 8
 
 func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int, reviewOrder *diff.ReviewOrder, useCustomOrder bool) string {
 	// Build a unified slice of entries: index 0 = PR Comments (virtual), 1..N = files 0..N-1.
@@ -322,11 +322,15 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 	if total >= 2 {
 		// Display position: PR Comments = 0, files start at 1.
 		// Show "PR" for the virtual entry, otherwise the file number.
+		nav := "Tab/S-Tab to navigate"
+		if reviewOrder != nil {
+			nav += " · Shift+O to toggle order"
+		}
 		var pos string
 		if uIdx == 0 {
-			pos = fmt.Sprintf("PR/%d files  (Tab/S-Tab to navigate)", len(files))
+			pos = fmt.Sprintf("PR/%d files  (%s)", len(files), nav)
 		} else {
-			pos = fmt.Sprintf("%d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))
+			pos = fmt.Sprintf("%d/%d files  (%s)", fileIdx+1, len(files), nav)
 		}
 		sb.WriteString(fileNavHintStyle.Render("  " + pos))
 	} else {
