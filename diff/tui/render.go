@@ -20,6 +20,8 @@ import (
 var (
 	addStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#00CC66"))
 	deleteStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4444"))
+	addBgStyle        = lipgloss.NewStyle().Background(lipgloss.Color("#142D17"))
+	deleteBgStyle     = lipgloss.NewStyle().Background(lipgloss.Color("#2D1414"))
 	hunkStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#8888CC")).Bold(true)
 	numStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
 	commentMarkStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
@@ -155,20 +157,17 @@ var cursorStyle = lipgloss.NewStyle().
 // is supplied separately via vp.StyleLineFunc.
 func renderFocusedLineWithCursor(l diff.ParsedLine, numWidth, focusedCol int) string {
 	var prefix string
-	var bodyStyle lipgloss.Style
+	bodyStyle := lipgloss.NewStyle()
 	switch l.Kind {
 	case diff.LineAdd:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
-		prefix = addStyle.Render(num + " + ")
-		bodyStyle = addStyle
+		prefix = num + addStyle.Render(" + ")
 	case diff.LineDelete:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.OldLineNum))
-		prefix = deleteStyle.Render(num + " - ")
-		bodyStyle = deleteStyle
+		prefix = num + deleteStyle.Render(" - ")
 	default:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
 		prefix = num + "   "
-		bodyStyle = lipgloss.NewStyle()
 	}
 
 	runes := []rune(l.Text)
@@ -190,14 +189,22 @@ func renderFocusedLineWithCursor(l diff.ParsedLine, numWidth, focusedCol int) st
 }
 
 // renderOneDiffLine renders a single diff line with line number and coloring.
+// Add/delete lines get a green/red +/- sign prefix; the body is syntax-highlighted
+// like context lines. The subtle add/delete line background is applied by the
+// viewport's StyleLineFunc (see model.buildView). The background does not
+// fill continuously across every embedded ANSI reset — line numbers and right
+// padding show it, but the syntax-colored body and +/- prefix fall back to
+// the terminal default between resets. Accepting that for now.
 func renderOneDiffLine(l diff.ParsedLine, numWidth int, ext string) string {
 	switch l.Kind {
 	case diff.LineAdd:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
-		return addStyle.Render(num+" + ") + addStyle.Render(l.Text)
+		text := highlightLine(l.Text, ext)
+		return num + addStyle.Render(" + ") + text
 	case diff.LineDelete:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.OldLineNum))
-		return deleteStyle.Render(num+" - ") + deleteStyle.Render(l.Text)
+		text := highlightLine(l.Text, ext)
+		return num + deleteStyle.Render(" - ") + text
 	default:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
 		text := highlightLine(l.Text, ext)
@@ -232,9 +239,9 @@ func renderHeader(session *diff.Session, fileCount int) string {
 
 // renderFileList renders the file navigation list.
 // fileIdx == -1 means the virtual "PR Comments" entry is active.
-const maxVisibleFiles = 5
+const maxVisibleFiles = 8
 
-func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int) string {
+func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int, reviewOrder *diff.ReviewOrder, useCustomOrder bool) string {
 	// Build a unified slice of entries: index 0 = PR Comments (virtual), 1..N = files 0..N-1.
 	// We use the unified index (uIdx) for windowing.
 	total := len(files) + 1 // +1 for the PR Comments entry
@@ -294,7 +301,17 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 			}
 
 			if u == uIdx {
-				sb.WriteString(fileActiveStyle.Render("  ▸ "+name+stats) + dot)
+				active := fileActiveStyle.Render("  ▸ "+name+stats) + dot
+				sb.WriteString(active)
+				if useCustomOrder && reviewOrder != nil {
+					if note := reviewOrder.NoteFor(f); note != "" {
+						used := lipgloss.Width(active)
+						blurb := renderBlurb(note, width-used)
+						if blurb != "" {
+							sb.WriteString(blurb)
+						}
+					}
+				}
 			} else {
 				sb.WriteString(fileStyle.Render("    "+name+stats) + dot)
 			}
@@ -305,11 +322,15 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 	if total >= 2 {
 		// Display position: PR Comments = 0, files start at 1.
 		// Show "PR" for the virtual entry, otherwise the file number.
+		nav := "Tab/S-Tab to navigate"
+		if reviewOrder != nil {
+			nav += " · Shift+O to toggle order"
+		}
 		var pos string
 		if uIdx == 0 {
-			pos = fmt.Sprintf("PR/%d files  (Tab/S-Tab to navigate)", len(files))
+			pos = fmt.Sprintf("PR/%d files  (%s)", len(files), nav)
 		} else {
-			pos = fmt.Sprintf("%d/%d files  (Tab/S-Tab to navigate)", fileIdx+1, len(files))
+			pos = fmt.Sprintf("%d/%d files  (%s)", fileIdx+1, len(files), nav)
 		}
 		sb.WriteString(fileNavHintStyle.Render("  " + pos))
 	} else {
@@ -362,20 +383,46 @@ func renderPRComments(comments []*diff.Comment, width int) diffRenderResult {
 	return diffRenderResult{content: strings.Join(lines, "\n"), linesMeta: meta}
 }
 
-// renderKeyBar renders the bottom key hint bar.
-func renderKeyBar(km KeyMap, mode Mode) string {
+// renderBlurb formats a review-order note for inline display next to the
+// active file. Returns "" when there isn't enough room for even a short tail.
+// The leading " — " is treated as decoration; when the note must be shortened,
+// it ends with a single "…".
+func renderBlurb(note string, avail int) string {
+	const prefix = " — "
+	const minUseful = 8 // prefix + a few chars worth showing
+	if avail < minUseful+len(prefix) {
+		return ""
+	}
+	budget := avail - len(prefix)
+	runes := []rune(note)
+	if len(runes) > budget {
+		if budget <= 1 {
+			return ""
+		}
+		runes = append(runes[:budget-1], '…')
+	}
+	return keyHintDescStyle.Render(prefix + string(runes))
+}
+
+// renderKeyBar renders the bottom key hint bar, progressively dropping hints
+// from the right when they don't fit within width. Ordered with most essential
+// hints first (help + quit) so narrow terminals stay discoverable.
+func renderKeyBar(km KeyMap, mode Mode, width int, hasReviewOrder bool) string {
 	var hints []string
 	switch mode {
 	case ModeNormal:
 		hints = []string{
+			keyHint(km.Help),
+			keyHint(km.Quit),
 			keyHintRaw("enter/c", "comment"),
-			keyHintRaw("r/u", "resolve/unresolve"),
 			keyHint(km.NextComment),
+			keyHintRaw("r/u", "resolve/unresolve"),
 			keyHintRaw("gd", "go to def"),
 			keyHintRaw("ctrl+o", "jump back"),
 			keyHint(km.OrphanCycle),
-			keyHint(km.Help),
-			keyHint(km.Quit),
+		}
+		if hasReviewOrder {
+			hints = append(hints, keyHint(km.ToggleOrder))
 		}
 	case ModeInspect:
 		hints = []string{
@@ -384,10 +431,10 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 		}
 	case ModeOrphan:
 		hints = []string{
+			keyHintRaw("esc", "exit"),
 			keyHintRaw("r", "resolve"),
 			keyHintRaw("u", "unresolve"),
 			keyHintRaw("o", "next orphan"),
-			keyHintRaw("esc", "exit"),
 		}
 	case ModeHelp:
 		hints = []string{keyHintRaw("esc/?/q", "close")}
@@ -398,14 +445,38 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 		}
 	case ModeDefinition:
 		hints = []string{
+			keyHintRaw("q/esc", "back"),
 			keyHintRaw("j/k", "scroll"),
 			keyHintRaw("h/l/w/b/e", "cursor"),
 			keyHintRaw("gd", "go to def"),
 			keyHintRaw("ctrl+o", "jump back"),
-			keyHintRaw("q/esc", "back"),
 		}
 	}
-	return "  " + strings.Join(hints, "  ")
+	return packHints(hints, width)
+}
+
+// packHints left-pads 2 and joins with 2-space separators, dropping entries
+// from the right until the total fits in width. width <= 0 means no clipping.
+func packHints(hints []string, width int) string {
+	const leftPad = 2
+	const sep = 2
+	if width <= 0 {
+		return strings.Repeat(" ", leftPad) + strings.Join(hints, strings.Repeat(" ", sep))
+	}
+	var out []string
+	used := leftPad
+	for i, h := range hints {
+		add := lipgloss.Width(h)
+		if i > 0 {
+			add += sep
+		}
+		if used+add > width {
+			break
+		}
+		out = append(out, h)
+		used += add
+	}
+	return strings.Repeat(" ", leftPad) + strings.Join(out, strings.Repeat(" ", sep))
 }
 
 func keyHint(b key.Binding) string {
@@ -530,6 +601,7 @@ func renderHelp(km KeyMap, width, height int) string {
 				{km.Comment.Help().Key, km.Comment.Help().Desc},
 				{km.Resolve.Help().Key, km.Resolve.Help().Desc},
 				{km.OrphanCycle.Help().Key, km.OrphanCycle.Help().Desc},
+				{km.ToggleOrder.Help().Key, km.ToggleOrder.Help().Desc},
 				{km.Quit.Help().Key, km.Quit.Help().Desc},
 			},
 		},

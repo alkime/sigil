@@ -118,6 +118,33 @@ sigil diff unresolve-comments <comment-id>
 Session auto-detection uses git context: run any ` + "`sigil diff`" + ` subcommand from any
 worktree and it finds the right PR automatically.
 
+## Review Order (optional, recommended on PR creation)
+
+When you open a PR as an agent, you have the clearest picture of which files a
+human reviewer should read first and why. Capture that by writing a small YAML
+file to the worktree root:
+
+Path: ` + "`.sigil/review-order.yaml`" + `
+
+` + "```" + `yaml
+files:
+  - path: api/auth.go
+    note: new JWT middleware, start here
+  - path: api/routes.go
+    note: wires the middleware into routes
+  - path: api/auth_test.go           # note is optional
+` + "```" + `
+
+Rules:
+- Paths match ` + "`ParsedFile.NewPath`" + ` first, then ` + "`OldPath`" + ` (so renames are fine).
+- Files you list that are not in the PR are silently ignored.
+- Files in the PR that you don't list are appended at the end in diff order.
+- ` + "`.sigil/`" + ` must be git-ignored — add it to ` + "`.gitignore`" + ` if it isn't already.
+
+When present, ` + "`sigil diff`" + ` opens with your ordering and shows the note inline
+next to the active file. ` + "`Shift+O`" + ` toggles between your order and the default
+diff order. Keep notes short (one line).
+
 ## Comment Format
 
 Each comment has:
