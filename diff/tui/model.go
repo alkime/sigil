@@ -588,9 +588,18 @@ func (m Model) buildView() string {
 	vp := m.viewport
 	fl := m.focusedLine
 	w := m.width
+	meta := m.linesMeta
 	vp.StyleLineFunc = func(idx int) lipgloss.Style {
 		if idx == fl {
 			return selectionStyle.Width(w)
+		}
+		if idx < len(meta) {
+			switch meta[idx].lineKind {
+			case diff.LineAdd:
+				return addBgStyle.Width(w)
+			case diff.LineDelete:
+				return deleteBgStyle.Width(w)
+			}
 		}
 		return lipgloss.NewStyle()
 	}
@@ -612,7 +621,7 @@ func (m Model) buildView() string {
 	if m.statusMsg != "" {
 		parts = append(parts, statusMsgStyle.Render("  "+m.statusMsg))
 	} else {
-		parts = append(parts, renderKeyBar(m.keymap, m.mode))
+		parts = append(parts, renderKeyBar(m.keymap, m.mode, m.width))
 	}
 
 	return strings.Join(parts, "\n")

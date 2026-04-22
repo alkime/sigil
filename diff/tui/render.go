@@ -20,6 +20,8 @@ import (
 var (
 	addStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#00CC66"))
 	deleteStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4444"))
+	addBgStyle        = lipgloss.NewStyle().Background(lipgloss.Color("#142D17"))
+	deleteBgStyle     = lipgloss.NewStyle().Background(lipgloss.Color("#2D1414"))
 	hunkStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#8888CC")).Bold(true)
 	numStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
 	commentMarkStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
@@ -155,20 +157,17 @@ var cursorStyle = lipgloss.NewStyle().
 // is supplied separately via vp.StyleLineFunc.
 func renderFocusedLineWithCursor(l diff.ParsedLine, numWidth, focusedCol int) string {
 	var prefix string
-	var bodyStyle lipgloss.Style
+	bodyStyle := lipgloss.NewStyle()
 	switch l.Kind {
 	case diff.LineAdd:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
-		prefix = addStyle.Render(num + " + ")
-		bodyStyle = addStyle
+		prefix = num + addStyle.Render(" + ")
 	case diff.LineDelete:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.OldLineNum))
-		prefix = deleteStyle.Render(num + " - ")
-		bodyStyle = deleteStyle
+		prefix = num + deleteStyle.Render(" - ")
 	default:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
 		prefix = num + "   "
-		bodyStyle = lipgloss.NewStyle()
 	}
 
 	runes := []rune(l.Text)
@@ -190,14 +189,22 @@ func renderFocusedLineWithCursor(l diff.ParsedLine, numWidth, focusedCol int) st
 }
 
 // renderOneDiffLine renders a single diff line with line number and coloring.
+// Add/delete lines get a green/red +/- sign prefix; the body is syntax-highlighted
+// like context lines. The subtle add/delete line background is applied by the
+// viewport's StyleLineFunc (see model.buildView). The background does not
+// fill continuously across every embedded ANSI reset — line numbers and right
+// padding show it, but the syntax-colored body and +/- prefix fall back to
+// the terminal default between resets. Accepting that for now.
 func renderOneDiffLine(l diff.ParsedLine, numWidth int, ext string) string {
 	switch l.Kind {
 	case diff.LineAdd:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
-		return addStyle.Render(num+" + ") + addStyle.Render(l.Text)
+		text := highlightLine(l.Text, ext)
+		return num + addStyle.Render(" + ") + text
 	case diff.LineDelete:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.OldLineNum))
-		return deleteStyle.Render(num+" - ") + deleteStyle.Render(l.Text)
+		text := highlightLine(l.Text, ext)
+		return num + deleteStyle.Render(" - ") + text
 	default:
 		num := numStyle.Render(fmt.Sprintf("%*d", numWidth, l.NewLineNum))
 		text := highlightLine(l.Text, ext)
@@ -362,20 +369,22 @@ func renderPRComments(comments []*diff.Comment, width int) diffRenderResult {
 	return diffRenderResult{content: strings.Join(lines, "\n"), linesMeta: meta}
 }
 
-// renderKeyBar renders the bottom key hint bar.
-func renderKeyBar(km KeyMap, mode Mode) string {
+// renderKeyBar renders the bottom key hint bar, progressively dropping hints
+// from the right when they don't fit within width. Ordered with most essential
+// hints first (help + quit) so narrow terminals stay discoverable.
+func renderKeyBar(km KeyMap, mode Mode, width int) string {
 	var hints []string
 	switch mode {
 	case ModeNormal:
 		hints = []string{
+			keyHint(km.Help),
+			keyHint(km.Quit),
 			keyHintRaw("enter/c", "comment"),
-			keyHintRaw("r/u", "resolve/unresolve"),
 			keyHint(km.NextComment),
+			keyHintRaw("r/u", "resolve/unresolve"),
 			keyHintRaw("gd", "go to def"),
 			keyHintRaw("ctrl+o", "jump back"),
 			keyHint(km.OrphanCycle),
-			keyHint(km.Help),
-			keyHint(km.Quit),
 		}
 	case ModeInspect:
 		hints = []string{
@@ -384,10 +393,10 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 		}
 	case ModeOrphan:
 		hints = []string{
+			keyHintRaw("esc", "exit"),
 			keyHintRaw("r", "resolve"),
 			keyHintRaw("u", "unresolve"),
 			keyHintRaw("o", "next orphan"),
-			keyHintRaw("esc", "exit"),
 		}
 	case ModeHelp:
 		hints = []string{keyHintRaw("esc/?/q", "close")}
@@ -398,14 +407,38 @@ func renderKeyBar(km KeyMap, mode Mode) string {
 		}
 	case ModeDefinition:
 		hints = []string{
+			keyHintRaw("q/esc", "back"),
 			keyHintRaw("j/k", "scroll"),
 			keyHintRaw("h/l/w/b/e", "cursor"),
 			keyHintRaw("gd", "go to def"),
 			keyHintRaw("ctrl+o", "jump back"),
-			keyHintRaw("q/esc", "back"),
 		}
 	}
-	return "  " + strings.Join(hints, "  ")
+	return packHints(hints, width)
+}
+
+// packHints left-pads 2 and joins with 2-space separators, dropping entries
+// from the right until the total fits in width. width <= 0 means no clipping.
+func packHints(hints []string, width int) string {
+	const leftPad = 2
+	const sep = 2
+	if width <= 0 {
+		return strings.Repeat(" ", leftPad) + strings.Join(hints, strings.Repeat(" ", sep))
+	}
+	var out []string
+	used := leftPad
+	for i, h := range hints {
+		add := lipgloss.Width(h)
+		if i > 0 {
+			add += sep
+		}
+		if used+add > width {
+			break
+		}
+		out = append(out, h)
+		used += add
+	}
+	return strings.Repeat(" ", leftPad) + strings.Join(out, strings.Repeat(" ", sep))
 }
 
 func keyHint(b key.Binding) string {

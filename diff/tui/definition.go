@@ -630,7 +630,7 @@ func viewDefinition(m Model) string {
 	if m.statusMsg != "" {
 		parts = append(parts, statusMsgStyle.Render("  "+m.statusMsg))
 	} else {
-		parts = append(parts, renderKeyBar(m.keymap, m.mode))
+		parts = append(parts, renderKeyBar(m.keymap, m.mode, m.width))
 	}
 	return strings.Join(parts, "\n")
 }
