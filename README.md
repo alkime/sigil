@@ -195,6 +195,7 @@ sigil diff unresolve-comments <id>                  # reopen
 | `Enter` | Open / edit the comment under the cursor |
 | `r` / `u` | Resolve / unresolve focused comment |
 | `o` | Cycle through orphaned comments |
+| `Shift+O` | Toggle suggested vs. default file order (when `.sigil/review-order.yaml` is present) |
 | `h` / `l` | Move the column cursor on the focused line |
 | `w` / `b` / `e` | Word-motion cursor (next / previous / end) |
 | `gd` / `Ctrl+]` | Go to definition of the symbol under the cursor |
@@ -213,6 +214,28 @@ Place the column cursor on a symbol with `h/l/w/b/e`, then press `gd` (or `Ctrl+
 Requires `gopls` on your `PATH`. Only Go (`.go`) files are supported today; TypeScript and Python are planned.
 
 If the worktree's `HEAD` differs from the diff snapshot, the status bar shows `LSP results may be stale: worktree HEAD differs from session snapshot` — definitions are always resolved against the current on-disk state.
+
+### Suggested review order
+
+When an agent opens a PR it has the clearest picture of which files a human reviewer should read first and why. It can capture that by dropping a small YAML file in the worktree — `sigil diff` reads it at startup, reorders the file list to match, and renders the author's short note inline next to the active file.
+
+```yaml
+# .sigil/review-order.yaml
+files:
+  - path: api/auth.go
+    note: new JWT middleware, start here
+  - path: api/routes.go
+    note: wires the middleware into routes
+  - path: api/auth_test.go           # note is optional
+```
+
+- Paths match the current file path first, falling back to the pre-rename path.
+- Files listed that aren't in the PR are silently ignored.
+- Files in the PR that aren't listed are appended at the end in diff order.
+- `Shift+O` in the TUI toggles between the suggested order and the default diff order; a status-bar hint appears next to the file-list nav when a suggestion is loaded.
+- Add `.sigil/` to `.gitignore` so the file stays local to the worktree.
+
+The built-in skill (`sigil generate-skill`) documents this convention so any agent following it writes the file at PR-creation time.
 
 ### Requirements
 
