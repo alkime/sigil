@@ -145,7 +145,15 @@ Rules:
 - Paths match ` + "`ParsedFile.NewPath`" + ` first, then ` + "`OldPath`" + ` (so renames are fine).
 - Files you list that are not in the PR are silently ignored.
 - Files in the PR that you don't list are appended at the end in diff order.
-- ` + "`.sigil/`" + ` must be git-ignored — add it to ` + "`.gitignore`" + ` if it isn't already.
+
+### Procedure when writing ` + "`.sigil/review-order.yaml`" + ` at PR creation
+
+1. **Check ` + "`.gitignore`" + `** for an entry that covers ` + "`.sigil/`" + ` (e.g. ` + "`.sigil/`" + `, ` + "`.sigil`" + `, or a broader pattern like ` + "`.*/`" + ` that would match).
+2. **If no entry exists, ASK THE USER** before modifying ` + "`.gitignore`" + `:
+   > "I'd like to add ` + "`.sigil/`" + ` to your ` + "`.gitignore`" + ` so the review-order file stays local to this worktree. OK to add it?"
+   - On yes: append ` + "`.sigil/`" + ` to ` + "`.gitignore`" + `, then write ` + "`.sigil/review-order.yaml`" + `.
+   - On no / no answer: skip writing the review-order file entirely — don't risk committing the file into the repo.
+3. **If an entry already covers it**, just write ` + "`.sigil/review-order.yaml`" + `.
 
 When present, ` + "`sigil diff`" + ` opens with your ordering and shows the note inline
 next to the active file. ` + "`Shift+O`" + ` toggles between your order and the default
