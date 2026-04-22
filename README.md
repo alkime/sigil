@@ -216,7 +216,7 @@ Place the column cursor on a symbol with `h/l/w/b/e`, then press `gd` (or `Ctrl+
 - **Out-of-diff target** — opens a read-only full-file viewer; `q` or `Esc` returns to the diff. Inside the viewer, `j/k/J/K` scroll, `h/l/w/b/e` move the cursor, and `gd` recurses.
 - **`Ctrl+o`** — pops the jump-history stack and returns to the previous location.
 
-Requires `gopls` on your `PATH`. Only Go (`.go`) files are supported today; TypeScript and Python are planned.
+Supported languages: Go (`.go`, via `gopls`), TypeScript (`.ts`, `.tsx`, via `typescript-language-server`), and Python (`.py`, `.pyi`, via `pyright-langserver`). The relevant binary must be on your `PATH`.
 
 If the worktree's `HEAD` differs from the diff snapshot, the status bar shows `LSP results may be stale: worktree HEAD differs from session snapshot` — definitions are always resolved against the current on-disk state.
 
@@ -246,7 +246,10 @@ The built-in skill (`sigil generate-skill`) documents this convention so any age
 
 `gh` CLI must be installed and authenticated (`gh auth login`). Comments are stored under `$XDG_DATA_HOME/sigil/diffs/` (default: `~/.local/share/sigil/diffs/`).
 
-Go-to-definition additionally requires [`gopls`](https://pkg.go.dev/golang.org/x/tools/gopls) on your `PATH` (`go install golang.org/x/tools/gopls@latest`).
+Go-to-definition requires a language server on your `PATH` for the files you review:
+- Go — [`gopls`](https://pkg.go.dev/golang.org/x/tools/gopls) (`go install golang.org/x/tools/gopls@latest`)
+- TypeScript — [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server) (`npm install -g typescript-language-server typescript`)
+- Python — [`pyright`](https://github.com/microsoft/pyright) (`npm install -g pyright`)
 
 ### LLM agent workflow
 
