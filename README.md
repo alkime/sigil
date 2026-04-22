@@ -195,6 +195,8 @@ sigil diff unresolve-comments <id>                  # reopen
 | `Enter` | Open / edit the comment under the cursor |
 | `r` / `u` | Resolve / unresolve focused comment |
 | `o` | Cycle through orphaned comments |
+| `v` | Mark the current file as viewed / unviewed |
+| `Shift+V` | Toggle whether Tab/Shift+Tab skips viewed files (default: skip) |
 | `Shift+O` | Toggle suggested vs. default file order (when `.sigil/review-order.yaml` is present) |
 | `h` / `l` | Move the column cursor on the focused line |
 | `w` / `b` / `e` | Word-motion cursor (next / previous / end) |

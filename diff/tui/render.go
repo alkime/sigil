@@ -29,6 +29,8 @@ var (
 	headerStyle       = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#EEEEEE")).Bold(true)
 	fileActiveStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
 	fileStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	fileViewedStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+	viewedMarkStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#669966"))
 	prCommentsStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
 	prCommentsActiveStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00")).Bold(true)
 	fileNavHintStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#1A1A2E")).Foreground(lipgloss.Color("#AAAAAA")).Bold(true)
@@ -241,7 +243,7 @@ func renderHeader(session *diff.Session, fileCount int) string {
 // fileIdx == -1 means the virtual "PR Comments" entry is active.
 const maxVisibleFiles = 8
 
-func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int, reviewOrder *diff.ReviewOrder, useCustomOrder bool) string {
+func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int, reviewOrder *diff.ReviewOrder, useCustomOrder bool, viewed *diff.ViewedState) string {
 	// Build a unified slice of entries: index 0 = PR Comments (virtual), 1..N = files 0..N-1.
 	// We use the unified index (uIdx) for windowing.
 	total := len(files) + 1 // +1 for the PR Comments entry
@@ -300,8 +302,14 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 				dot = commentMarkStyle.Render(fmt.Sprintf(" ●%d", n))
 			}
 
+			isViewed := viewed.IsViewed(name)
+			var check string
+			if isViewed {
+				check = viewedMarkStyle.Render(" ✓")
+			}
+
 			if u == uIdx {
-				active := fileActiveStyle.Render("  ▸ "+name+stats) + dot
+				active := fileActiveStyle.Render("  ▸ "+name+stats) + dot + check
 				sb.WriteString(active)
 				if useCustomOrder && reviewOrder != nil {
 					if note := reviewOrder.NoteFor(f); note != "" {
@@ -313,7 +321,11 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 					}
 				}
 			} else {
-				sb.WriteString(fileStyle.Render("    "+name+stats) + dot)
+				rowStyle := fileStyle
+				if isViewed {
+					rowStyle = fileViewedStyle
+				}
+				sb.WriteString(rowStyle.Render("    "+name+stats) + dot + check)
 			}
 		}
 		sb.WriteByte('\n')
@@ -407,16 +419,22 @@ func renderBlurb(note string, avail int) string {
 // renderKeyBar renders the bottom key hint bar, progressively dropping hints
 // from the right when they don't fit within width. Ordered with most essential
 // hints first (help + quit) so narrow terminals stay discoverable.
-func renderKeyBar(km KeyMap, mode Mode, width int, hasReviewOrder bool) string {
+func renderKeyBar(km KeyMap, mode Mode, width int, hasReviewOrder, skipViewed bool) string {
 	var hints []string
 	switch mode {
 	case ModeNormal:
+		skipDesc := "show all"
+		if skipViewed {
+			skipDesc = "skip viewed"
+		}
 		hints = []string{
 			keyHint(km.Help),
 			keyHint(km.Quit),
 			keyHintRaw("enter/c", "comment"),
 			keyHint(km.NextComment),
 			keyHintRaw("r/u", "resolve/unresolve"),
+			keyHintRaw("v", "mark viewed"),
+			keyHintRaw("V", skipDesc),
 			keyHintRaw("gd", "go to def"),
 			keyHintRaw("ctrl+o", "jump back"),
 			keyHint(km.OrphanCycle),
@@ -601,6 +619,8 @@ func renderHelp(km KeyMap, width, height int) string {
 				{km.Comment.Help().Key, km.Comment.Help().Desc},
 				{km.Resolve.Help().Key, km.Resolve.Help().Desc},
 				{km.OrphanCycle.Help().Key, km.OrphanCycle.Help().Desc},
+				{km.ToggleViewed.Help().Key, km.ToggleViewed.Help().Desc},
+				{km.ToggleSkipViewed.Help().Key, km.ToggleSkipViewed.Help().Desc},
 				{km.ToggleOrder.Help().Key, km.ToggleOrder.Help().Desc},
 				{km.Quit.Help().Key, km.Quit.Help().Desc},
 			},

@@ -14,12 +14,14 @@ type KeyMap struct {
 	PrevFile    key.Binding
 	NextComment key.Binding
 	PrevComment key.Binding
-	Comment     key.Binding
-	Resolve     key.Binding
-	OrphanCycle key.Binding
-	ToggleOrder key.Binding
-	Quit        key.Binding
-	Help        key.Binding
+	Comment          key.Binding
+	Resolve          key.Binding
+	OrphanCycle      key.Binding
+	ToggleOrder      key.Binding
+	ToggleViewed     key.Binding
+	ToggleSkipViewed key.Binding
+	Quit             key.Binding
+	Help             key.Binding
 
 	// Column cursor + vi-style word motions on the focused diff line.
 	ColLeft  key.Binding
@@ -49,9 +51,11 @@ func DefaultKeyMap() KeyMap {
 		PrevComment: key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev comment")),
 		Comment:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "add comment")),
 		Resolve:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "resolve")),
-		OrphanCycle: key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "orphan review")),
-		ToggleOrder: key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "toggle review order")),
-		Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		OrphanCycle:      key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "orphan review")),
+		ToggleOrder:      key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "toggle review order")),
+		ToggleViewed:     key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "mark viewed")),
+		ToggleSkipViewed: key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "toggle skip viewed")),
+		Quit:             key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 
 		ColLeft:  key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "cursor left")),
