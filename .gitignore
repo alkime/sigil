@@ -34,5 +34,8 @@ go.work.sum
 
 .worktrees
 
+# sigil diff per-worktree state (review-order.yaml, etc.)
+.sigil/
+
 # GoReleaser build output
 dist/

@@ -176,8 +176,11 @@ cd my-repo
 git checkout feature/x
 
 sigil diff                                          # open TUI for the open PR on this branch
+sigil diff list-sessions                            # list review sessions for this repo
+sigil diff list-sessions --all                      # list every repo's sessions
 sigil diff get-comments                             # plain-text dump for LLM consumption
 sigil diff get-comments --open                      # only unresolved comments
+sigil diff get-comments --session <id>              # pick an explicit session
 sigil diff reply-comment <id> "fixed in next push"  # append a reply
 sigil diff resolve-comments <id>                    # mark resolved
 sigil diff unresolve-comments <id>                  # reopen
@@ -195,6 +198,8 @@ sigil diff unresolve-comments <id>                  # reopen
 | `Enter` | Open / edit the comment under the cursor |
 | `r` / `u` | Resolve / unresolve focused comment |
 | `o` | Cycle through orphaned comments |
+| `v` | Mark the current file as viewed / unviewed |
+| `Shift+V` | Toggle whether Tab/Shift+Tab skips viewed files (default: skip) |
 | `Shift+O` | Toggle suggested vs. default file order (when `.sigil/review-order.yaml` is present) |
 | `h` / `l` | Move the column cursor on the focused line |
 | `w` / `b` / `e` | Word-motion cursor (next / previous / end) |

@@ -125,6 +125,12 @@ type Model struct {
 	reviewOrder    *diff.ReviewOrder
 	useCustomOrder bool
 	filesDiffOrder []diff.ParsedFile
+
+	// Viewed-file tracking. viewed is always non-nil (empty state when the
+	// snapshot has no viewed.yaml yet). skipViewed controls whether
+	// Tab/S-Tab skips viewed files — default true.
+	viewed     *diff.ViewedState
+	skipViewed bool
 }
 
 // New creates a new diff TUI Model, loading and orphan-marking comments.
@@ -150,6 +156,9 @@ func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model 
 		files, dropped = reviewOrder.Reorder(pd.Files)
 	}
 
+	base, head := latestSnapshotSHAs(session)
+	viewed, vwErr := diff.LoadViewedState(org, repoName, session.PRNumber, base, head)
+
 	m := Model{
 		session:        session,
 		pd:             pd,
@@ -163,6 +172,8 @@ func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model 
 		worktreePath:   worktreePath,
 		reviewOrder:    reviewOrder,
 		useCustomOrder: reviewOrder != nil,
+		viewed:         viewed,
+		skipViewed:     true,
 	}
 
 	switch {
@@ -170,6 +181,8 @@ func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model 
 		m.statusMsg = fmt.Sprintf("%d orphaned comment(s) — press o to review", len(orphanedIDs))
 	case roErr != nil:
 		m.statusMsg = fmt.Sprintf("review order: %v (using diff order)", roErr)
+	case vwErr != nil:
+		m.statusMsg = fmt.Sprintf("viewed state: %v (starting fresh)", vwErr)
 	case dropped > 0:
 		m.statusMsg = fmt.Sprintf("review order: %d listed file(s) not in PR", dropped)
 	default:
@@ -179,6 +192,26 @@ func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model 
 	}
 
 	return m
+}
+
+// latestSnapshotSHAs returns the (base, head) pair of the newest snapshot,
+// or empty strings when no snapshots exist yet.
+func latestSnapshotSHAs(session *diff.Session) (base, head string) {
+	if session == nil || len(session.Snapshots) == 0 {
+		return "", ""
+	}
+	s := session.Snapshots[len(session.Snapshots)-1]
+	return s.Base, s.Head
+}
+
+// filePathOf returns the primary identifier for a ParsedFile — NewPath for
+// most files, falling back to OldPath for deletes. This matches how viewed
+// state, comments, and the file list's rendered name identify files.
+func filePathOf(f diff.ParsedFile) string {
+	if f.IsDelete && f.OldPath != "" {
+		return f.OldPath
+	}
+	return f.NewPath
 }
 
 // staleHeadWarning returns a status message when the worktree's HEAD differs
@@ -416,6 +449,35 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, clearStatusCmd()
 
+	case "v":
+		if m.fileIdx < 0 || m.fileIdx >= len(m.files) {
+			m.statusMsg = "no file selected"
+			return m, clearStatusCmd()
+		}
+		path := filePathOf(m.files[m.fileIdx])
+		nowViewed := m.viewed.Toggle(path)
+		base, head := latestSnapshotSHAs(m.session)
+		if err := m.viewed.Save(m.org, m.repoName, m.session.PRNumber, base, head); err != nil {
+			m.statusMsg = fmt.Sprintf("error saving viewed state: %v", err)
+			return m, clearStatusCmd()
+		}
+		m.rebuildDiffView()
+		if nowViewed {
+			m.statusMsg = fmt.Sprintf("viewed: %s", path)
+		} else {
+			m.statusMsg = fmt.Sprintf("unviewed: %s", path)
+		}
+		return m, clearStatusCmd()
+
+	case "V":
+		m.skipViewed = !m.skipViewed
+		if m.skipViewed {
+			m.statusMsg = "Tab/S-Tab: skipping viewed"
+		} else {
+			m.statusMsg = "Tab/S-Tab: showing all files"
+		}
+		return m, clearStatusCmd()
+
 	case "ctrl+]":
 		cmd := m.goToDefinition()
 		return m, cmd
@@ -621,7 +683,7 @@ func (m Model) buildView() string {
 		parts = append(parts, banner)
 	}
 
-	parts = append(parts, renderFileList(m.files, m.fileIdx, m.commentCountsByFile(), m.width, m.reviewOrder, m.useCustomOrder))
+	parts = append(parts, renderFileList(m.files, m.fileIdx, m.commentCountsByFile(), m.width, m.reviewOrder, m.useCustomOrder, m.viewed))
 	parts = append(parts, separatorStyle.Render(strings.Repeat("─", m.width)))
 
 	vp := m.viewport
@@ -660,7 +722,7 @@ func (m Model) buildView() string {
 	if m.statusMsg != "" {
 		parts = append(parts, statusMsgStyle.Render("  "+m.statusMsg))
 	} else {
-		parts = append(parts, renderKeyBar(m.keymap, m.mode, m.width, m.reviewOrder != nil))
+		parts = append(parts, renderKeyBar(m.keymap, m.mode, m.width, m.reviewOrder != nil, m.skipViewed))
 	}
 
 	return strings.Join(parts, "\n")
@@ -924,12 +986,30 @@ func (m *Model) cycleFile(delta int) {
 	if len(m.files) == 0 {
 		return
 	}
-	// Virtual index -1 is the "PR Comments" entry before index 0.
-	// Total entries = len(m.files) + 1 (the PR Comments entry).
+	// Virtual index 0 = PR Comments, 1..N = files 0..N-1.
 	total := len(m.files) + 1
-	// Shift to a 0-based range where 0 = PR Comments, 1..N = files 0..N-1.
-	current := m.fileIdx + 1
-	next := (current + delta + total) % total
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	next := (m.fileIdx + 1 + step + total) % total
+
+	// When skip-viewed is on, walk past viewed files until we find one
+	// that's either PR Comments (virtual idx 0 — always allowed) or
+	// unviewed. Bound by total so "everything viewed" falls back to PR
+	// Comments rather than spinning.
+	if m.skipViewed && m.viewed.Len() > 0 {
+		for i := 0; i < total; i++ {
+			if next == 0 {
+				break
+			}
+			if !m.viewed.IsViewed(filePathOf(m.files[next-1])) {
+				break
+			}
+			next = (next + step + total) % total
+		}
+	}
+
 	m.fileIdx = next - 1
 	m.focusedLine = 0
 	m.rebuildDiffView()
