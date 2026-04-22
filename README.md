@@ -176,8 +176,11 @@ cd my-repo
 git checkout feature/x
 
 sigil diff                                          # open TUI for the open PR on this branch
+sigil diff list-sessions                            # list review sessions for this repo
+sigil diff list-sessions --all                      # list every repo's sessions
 sigil diff get-comments                             # plain-text dump for LLM consumption
 sigil diff get-comments --open                      # only unresolved comments
+sigil diff get-comments --session <id>              # pick an explicit session
 sigil diff reply-comment <id> "fixed in next push"  # append a reply
 sigil diff resolve-comments <id>                    # mark resolved
 sigil diff unresolve-comments <id>                  # reopen

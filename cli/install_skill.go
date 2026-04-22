@@ -94,6 +94,12 @@ sigil diff                  # open TUI (requires gh CLI)
 ### Diff subcommands
 
 ` + "```" + `bash
+# Discover sessions when auto-detect can't see the PR (e.g. operating
+# from outside the worktree, or multiple PRs in play). Default scope is
+# the current repo; --all walks every repo sigil has seen.
+sigil diff list-sessions
+sigil diff list-sessions --all
+
 # Read all PR comments (default: current branch's open PR)
 sigil diff get-comments
 sigil diff get-comments --open
