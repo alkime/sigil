@@ -241,7 +241,7 @@ func renderHeader(session *diff.Session, fileCount int) string {
 // fileIdx == -1 means the virtual "PR Comments" entry is active.
 const maxVisibleFiles = 5
 
-func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int) string {
+func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[string]int, width int, reviewOrder *diff.ReviewOrder, useCustomOrder bool) string {
 	// Build a unified slice of entries: index 0 = PR Comments (virtual), 1..N = files 0..N-1.
 	// We use the unified index (uIdx) for windowing.
 	total := len(files) + 1 // +1 for the PR Comments entry
@@ -301,7 +301,17 @@ func renderFileList(files []diff.ParsedFile, fileIdx int, commentCounts map[stri
 			}
 
 			if u == uIdx {
-				sb.WriteString(fileActiveStyle.Render("  ▸ "+name+stats) + dot)
+				active := fileActiveStyle.Render("  ▸ "+name+stats) + dot
+				sb.WriteString(active)
+				if useCustomOrder && reviewOrder != nil {
+					if note := reviewOrder.NoteFor(f); note != "" {
+						used := lipgloss.Width(active)
+						blurb := renderBlurb(note, width-used)
+						if blurb != "" {
+							sb.WriteString(blurb)
+						}
+					}
+				}
 			} else {
 				sb.WriteString(fileStyle.Render("    "+name+stats) + dot)
 			}
@@ -369,10 +379,31 @@ func renderPRComments(comments []*diff.Comment, width int) diffRenderResult {
 	return diffRenderResult{content: strings.Join(lines, "\n"), linesMeta: meta}
 }
 
+// renderBlurb formats a review-order note for inline display next to the
+// active file. Returns "" when there isn't enough room for even a short tail.
+// The leading " — " is treated as decoration; when the note must be shortened,
+// it ends with a single "…".
+func renderBlurb(note string, avail int) string {
+	const prefix = " — "
+	const minUseful = 8 // prefix + a few chars worth showing
+	if avail < minUseful+len(prefix) {
+		return ""
+	}
+	budget := avail - len(prefix)
+	runes := []rune(note)
+	if len(runes) > budget {
+		if budget <= 1 {
+			return ""
+		}
+		runes = append(runes[:budget-1], '…')
+	}
+	return keyHintDescStyle.Render(prefix + string(runes))
+}
+
 // renderKeyBar renders the bottom key hint bar, progressively dropping hints
 // from the right when they don't fit within width. Ordered with most essential
 // hints first (help + quit) so narrow terminals stay discoverable.
-func renderKeyBar(km KeyMap, mode Mode, width int) string {
+func renderKeyBar(km KeyMap, mode Mode, width int, hasReviewOrder bool) string {
 	var hints []string
 	switch mode {
 	case ModeNormal:
@@ -385,6 +416,9 @@ func renderKeyBar(km KeyMap, mode Mode, width int) string {
 			keyHintRaw("gd", "go to def"),
 			keyHintRaw("ctrl+o", "jump back"),
 			keyHint(km.OrphanCycle),
+		}
+		if hasReviewOrder {
+			hints = append(hints, keyHint(km.ToggleOrder))
 		}
 	case ModeInspect:
 		hints = []string{
@@ -563,6 +597,7 @@ func renderHelp(km KeyMap, width, height int) string {
 				{km.Comment.Help().Key, km.Comment.Help().Desc},
 				{km.Resolve.Help().Key, km.Resolve.Help().Desc},
 				{km.OrphanCycle.Help().Key, km.OrphanCycle.Help().Desc},
+				{km.ToggleOrder.Help().Key, km.ToggleOrder.Help().Desc},
 				{km.Quit.Help().Key, km.Quit.Help().Desc},
 			},
 		},

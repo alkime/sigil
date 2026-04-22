@@ -117,6 +117,14 @@ type Model struct {
 	defLines      []string
 	defMeta       []lineInfo // reserved for future recursive-gd column data
 	defIsExternal bool
+
+	// Review ordering — loaded from .sigil/review-order.yaml in the worktree.
+	// reviewOrder is nil when the file is absent or malformed; useCustomOrder
+	// toggles between the LLM-specified order and the original diff order
+	// (snapshot preserved in filesDiffOrder).
+	reviewOrder    *diff.ReviewOrder
+	useCustomOrder bool
+	filesDiffOrder []diff.ParsedFile
 }
 
 // New creates a new diff TUI Model, loading and orphan-marking comments.
@@ -135,22 +143,39 @@ func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model 
 
 	orphanedIDs := diff.MarkOrphans(comments, pd)
 
-	m := Model{
-		session:      session,
-		pd:           pd,
-		files:        pd.Files,
-		keymap:       DefaultKeyMap(),
-		comments:     comments,
-		orphans:      orphanedIDs,
-		org:          org,
-		repoName:     repoName,
-		worktreePath: worktreePath,
+	reviewOrder, roErr := diff.LoadReviewOrder(worktreePath)
+	files := pd.Files
+	dropped := 0
+	if reviewOrder != nil {
+		files, dropped = reviewOrder.Reorder(pd.Files)
 	}
 
-	if len(orphanedIDs) > 0 {
+	m := Model{
+		session:        session,
+		pd:             pd,
+		files:          files,
+		filesDiffOrder: pd.Files,
+		keymap:         DefaultKeyMap(),
+		comments:       comments,
+		orphans:        orphanedIDs,
+		org:            org,
+		repoName:       repoName,
+		worktreePath:   worktreePath,
+		reviewOrder:    reviewOrder,
+		useCustomOrder: reviewOrder != nil,
+	}
+
+	switch {
+	case len(orphanedIDs) > 0:
 		m.statusMsg = fmt.Sprintf("%d orphaned comment(s) — press o to review", len(orphanedIDs))
-	} else if msg := staleHeadWarning(worktreePath, session); msg != "" {
-		m.statusMsg = msg
+	case roErr != nil:
+		m.statusMsg = fmt.Sprintf("review order: %v (using diff order)", roErr)
+	case dropped > 0:
+		m.statusMsg = fmt.Sprintf("review order: %d listed file(s) not in PR", dropped)
+	default:
+		if msg := staleHeadWarning(worktreePath, session); msg != "" {
+			m.statusMsg = msg
+		}
 	}
 
 	return m
@@ -377,6 +402,20 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.enterOrphanMode()
 
+	case "O":
+		if m.reviewOrder == nil {
+			m.statusMsg = "no .sigil/review-order.yaml in worktree"
+			return m, clearStatusCmd()
+		}
+		m.useCustomOrder = !m.useCustomOrder
+		m.applyOrder()
+		if m.useCustomOrder {
+			m.statusMsg = "review order: custom"
+		} else {
+			m.statusMsg = "review order: diff"
+		}
+		return m, clearStatusCmd()
+
 	case "ctrl+]":
 		cmd := m.goToDefinition()
 		return m, cmd
@@ -582,7 +621,7 @@ func (m Model) buildView() string {
 		parts = append(parts, banner)
 	}
 
-	parts = append(parts, renderFileList(m.files, m.fileIdx, m.commentCountsByFile(), m.width))
+	parts = append(parts, renderFileList(m.files, m.fileIdx, m.commentCountsByFile(), m.width, m.reviewOrder, m.useCustomOrder))
 	parts = append(parts, separatorStyle.Render(strings.Repeat("─", m.width)))
 
 	vp := m.viewport
@@ -621,12 +660,32 @@ func (m Model) buildView() string {
 	if m.statusMsg != "" {
 		parts = append(parts, statusMsgStyle.Render("  "+m.statusMsg))
 	} else {
-		parts = append(parts, renderKeyBar(m.keymap, m.mode, m.width))
+		parts = append(parts, renderKeyBar(m.keymap, m.mode, m.width, m.reviewOrder != nil))
 	}
 
 	return strings.Join(parts, "\n")
 }
 
+
+// applyOrder recomputes m.files from filesDiffOrder based on useCustomOrder,
+// resets the active file to the first entry, and rebuilds the viewport. Call
+// after toggling m.useCustomOrder.
+func (m *Model) applyOrder() {
+	if m.useCustomOrder && m.reviewOrder != nil {
+		m.files, _ = m.reviewOrder.Reorder(m.filesDiffOrder)
+	} else {
+		// Copy to avoid aliasing the original diff-order slice.
+		m.files = append([]diff.ParsedFile(nil), m.filesDiffOrder...)
+	}
+	if len(m.files) == 0 {
+		m.fileIdx = -1
+	} else if m.fileIdx >= len(m.files) {
+		m.fileIdx = 0
+	}
+	m.focusedLine = 0
+	m.focusedCol = 0
+	m.rebuildDiffView()
+}
 
 // rebuildDiffView rebuilds the viewport content for the current file (or PR Comments view).
 func (m *Model) rebuildDiffView() {

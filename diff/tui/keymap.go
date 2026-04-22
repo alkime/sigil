@@ -17,6 +17,7 @@ type KeyMap struct {
 	Comment     key.Binding
 	Resolve     key.Binding
 	OrphanCycle key.Binding
+	ToggleOrder key.Binding
 	Quit        key.Binding
 	Help        key.Binding
 
@@ -49,6 +50,7 @@ func DefaultKeyMap() KeyMap {
 		Comment:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "add comment")),
 		Resolve:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "resolve")),
 		OrphanCycle: key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "orphan review")),
+		ToggleOrder: key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "toggle review order")),
 		Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 
