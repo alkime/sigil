@@ -23,13 +23,16 @@ func (c *DiffReplyCommentCmd) Run(ctx *CLIContext) error {
 	session, _, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
 		SessionID:    ctx.DiffSession,
 		IncludeDraft: ctx.DiffDraft,
+		Local:        ctx.DiffLocal,
+		BaseRef:      ctx.DiffBaseRef,
 	})
 	if err != nil {
 		return fmt.Errorf("resolve session: %w", err)
 	}
 
 	org, repo := splitRepo(session.Repo)
-	comments, err := diff.LoadComments(org, repo, session.PRNumber)
+	key := diff.KeyForSession(session)
+	comments, err := diff.LoadComments(org, repo, key)
 	if err != nil {
 		return fmt.Errorf("load comments: %w", err)
 	}
@@ -47,7 +50,7 @@ func (c *DiffReplyCommentCmd) Run(ctx *CLIContext) error {
 		return fmt.Errorf("comment %s not found", c.ID)
 	}
 
-	if err := diff.SaveComments(org, repo, session.PRNumber, comments); err != nil {
+	if err := diff.SaveComments(org, repo, key, comments); err != nil {
 		return fmt.Errorf("save comments: %w", err)
 	}
 

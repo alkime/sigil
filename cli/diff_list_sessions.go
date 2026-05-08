@@ -22,7 +22,9 @@ type DiffListSessionsCmd struct {
 // sessions index plus the session YAML itself.
 type sessionRow struct {
 	Repo      string
+	Kind      diff.SessionKind
 	PRNumber  int
+	BaseRef   string
 	Branch    string
 	Title     string
 	HeadSHA   string
@@ -65,22 +67,35 @@ func (c *DiffListSessionsCmd) Run(ctx *CLIContext) error {
 
 	tw := tabwriter.NewWriter(ctx.Out, 0, 0, 2, ' ', 0)
 	if c.All {
-		fmt.Fprintln(tw, "REPO\tPR\tBRANCH\tTITLE\tUPDATED\tSESSION")
+		fmt.Fprintln(tw, "REPO\tREF\tBRANCH\tTITLE\tUPDATED\tSESSION")
 	} else {
-		fmt.Fprintln(tw, "PR\tBRANCH\tTITLE\tUPDATED\tSESSION")
+		fmt.Fprintln(tw, "REF\tBRANCH\tTITLE\tUPDATED\tSESSION")
 	}
 	for _, r := range rows {
 		updated := r.UpdatedAt.UTC().Format(time.RFC3339)
 		title := truncate(r.Title, 60)
+		ref := refLabel(r)
 		if c.All {
-			fmt.Fprintf(tw, "%s\t#%d\t%s\t%s\t%s\t%s\n",
-				r.Repo, r.PRNumber, r.Branch, title, updated, r.SessionID)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.Repo, ref, r.Branch, title, updated, r.SessionID)
 		} else {
-			fmt.Fprintf(tw, "#%d\t%s\t%s\t%s\t%s\n",
-				r.PRNumber, r.Branch, title, updated, r.SessionID)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+				ref, r.Branch, title, updated, r.SessionID)
 		}
 	}
 	return tw.Flush()
+}
+
+// refLabel renders the "what is this session" column. PR sessions show as
+// "#42"; local sessions show their base ref like "vs main".
+func refLabel(r sessionRow) string {
+	if r.Kind == diff.SessionKindLocal {
+		if r.BaseRef == "" {
+			return "local"
+		}
+		return "vs " + r.BaseRef
+	}
+	return fmt.Sprintf("#%d", r.PRNumber)
 }
 
 // collectSessionRows walks the sigil diff base path and loads every session
@@ -116,13 +131,15 @@ func collectSessionRows(repoFilter string) ([]sessionRow, error) {
 			continue
 		}
 		for _, e := range entries {
-			session, err := diff.LoadSession(org, repoName, e.PRNumber)
+			session, err := diff.LoadSession(org, repoName, e.SessionKey())
 			if err != nil || session == nil {
 				continue
 			}
 			rows = append(rows, sessionRow{
 				Repo:      repoFull,
+				Kind:      session.Kind,
 				PRNumber:  session.PRNumber,
+				BaseRef:   session.BaseBranch,
 				Branch:    session.Branch,
 				Title:     session.PRTitle,
 				HeadSHA:   session.HeadSHA,

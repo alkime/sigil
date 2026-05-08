@@ -73,7 +73,7 @@ func TestIntegration_happyPath(t *testing.T) {
 	}
 
 	snap := session.Snapshots[0]
-	snapDir := SnapshotDir("testorg", "testrepo", 99, snap.Base, snap.Head)
+	snapDir := SnapshotDir("testorg", "testrepo", PRSessionKey(99), snap.Base, snap.Head)
 	if _, err := os.Stat(filepath.Join(snapDir, "diff.patch")); err != nil {
 		t.Errorf("diff.patch missing: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestIntegration_drift_newSnapshotAndOrphan(t *testing.T) {
 
 	// Add a comment that will become orphaned when the diff changes
 	org, repoName := "testorg", "testrepo"
-	if err := os.MkdirAll(SessionDir(org, repoName, 99), 0o755); err != nil {
+	if err := os.MkdirAll(SessionDir(org, repoName, PRSessionKey(99)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -212,7 +212,7 @@ func TestIntegration_drift_newSnapshotAndOrphan(t *testing.T) {
 		Author:      "tester",
 		SnapshotRef: session1.Snapshots[0].Base + "_" + session1.Snapshots[0].Head,
 	}
-	if err := SaveComments(org, repoName, 99, []Comment{comment}); err != nil {
+	if err := SaveComments(org, repoName, PRSessionKey(99), []Comment{comment}); err != nil {
 		t.Fatalf("SaveComments: %v", err)
 	}
 

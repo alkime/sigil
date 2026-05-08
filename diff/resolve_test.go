@@ -122,7 +122,7 @@ func TestResolve_newSession(t *testing.T) {
 		t.Error("expected non-empty diff")
 	}
 	snap := session.Snapshots[0]
-	snapDir := SnapshotDir("testorg", "testrepo", session.PRNumber, snap.Base, snap.Head)
+	snapDir := SnapshotDir("testorg", "testrepo", PRSessionKey(session.PRNumber), snap.Base, snap.Head)
 	if _, err := os.Stat(filepath.Join(snapDir, "diff.patch")); err != nil {
 		t.Errorf("diff.patch missing: %v", err)
 	}

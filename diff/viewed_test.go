@@ -15,7 +15,7 @@ func setupViewedTmpHome(t *testing.T) string {
 
 func TestLoadViewedState_MissingFile(t *testing.T) {
 	setupViewedTmpHome(t)
-	got, err := LoadViewedState("acme", "repo", 7, "base", "head")
+	got, err := LoadViewedState("acme", "repo", PRSessionKey(7), "base", "head")
 	if err != nil {
 		t.Fatalf("expected no error on missing file, got %v", err)
 	}
@@ -29,7 +29,7 @@ func TestLoadViewedState_MissingFile(t *testing.T) {
 
 func TestLoadViewedState_Malformed(t *testing.T) {
 	setupViewedTmpHome(t)
-	dir := SnapshotDir("acme", "repo", 7, "base", "head")
+	dir := SnapshotDir("acme", "repo", PRSessionKey(7), "base", "head")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestLoadViewedState_Malformed(t *testing.T) {
 	if err := os.WriteFile(path, []byte("viewed: [unterminated"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := LoadViewedState("acme", "repo", 7, "base", "head")
+	got, err := LoadViewedState("acme", "repo", PRSessionKey(7), "base", "head")
 	if err == nil {
 		t.Fatalf("expected error on malformed yaml, got nil")
 	}
@@ -107,12 +107,12 @@ func TestViewedState_SaveLoadRoundtrip(t *testing.T) {
 	s.Mark("pkg/a.go")
 	s.Mark("pkg/m.go")
 
-	if err := s.Save("acme", "repo", 7, "base", "head"); err != nil {
+	if err := s.Save("acme", "repo", PRSessionKey(7), "base", "head"); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	// On-disk file should be sorted alphabetically.
-	data, err := os.ReadFile(filepath.Join(SnapshotDir("acme", "repo", 7, "base", "head"), ViewedStateFileName))
+	data, err := os.ReadFile(filepath.Join(SnapshotDir("acme", "repo", PRSessionKey(7), "base", "head"), ViewedStateFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestViewedState_SaveLoadRoundtrip(t *testing.T) {
 		t.Errorf("on-disk content mismatch\ngot:\n%s\nwant:\n%s", data, want)
 	}
 
-	loaded, err := LoadViewedState("acme", "repo", 7, "base", "head")
+	loaded, err := LoadViewedState("acme", "repo", PRSessionKey(7), "base", "head")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

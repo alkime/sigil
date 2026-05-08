@@ -398,7 +398,7 @@ func TestComment_submitPersists(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", xdg)
 
 	// Pre-create the session dir so SaveComments can write
-	sessionDir := diff.SessionDir("testorg", "testrepo", 42)
+	sessionDir := diff.SessionDir("testorg", "testrepo", diff.PRSessionKey(42))
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestComment_submitPersists(t *testing.T) {
 	}
 
 	// Verify comments.yaml was written
-	comments, err := diff.LoadComments("testorg", "testrepo", 42)
+	comments, err := diff.LoadComments("testorg", "testrepo", diff.PRSessionKey(42))
 	if err != nil {
 		t.Fatalf("LoadComments: %v", err)
 	}
@@ -520,7 +520,7 @@ func TestPRComment_submitPersists(t *testing.T) {
 	xdg := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", xdg)
 
-	sessionDir := diff.SessionDir("testorg", "testrepo", 42)
+	sessionDir := diff.SessionDir("testorg", "testrepo", diff.PRSessionKey(42))
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestPRComment_submitPersists(t *testing.T) {
 	}
 
 	// Verify the comment was persisted with File == "".
-	comments, err := diff.LoadComments("testorg", "testrepo", 42)
+	comments, err := diff.LoadComments("testorg", "testrepo", diff.PRSessionKey(42))
 	if err != nil {
 		t.Fatalf("LoadComments: %v", err)
 	}

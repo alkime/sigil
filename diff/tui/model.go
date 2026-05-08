@@ -140,7 +140,8 @@ type Model struct {
 func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model {
 	org, repoName := splitRepoLocal(session.Repo)
 
-	loaded, _ := diff.LoadComments(org, repoName, session.PRNumber)
+	key := diff.KeyForSession(session)
+	loaded, _ := diff.LoadComments(org, repoName, key)
 	comments := make([]*diff.Comment, len(loaded))
 	for i := range loaded {
 		c := loaded[i]
@@ -157,7 +158,7 @@ func New(session *diff.Session, pd *diff.ParsedDiff, worktreePath string) Model 
 	}
 
 	base, head := latestSnapshotSHAs(session)
-	viewed, vwErr := diff.LoadViewedState(org, repoName, session.PRNumber, base, head)
+	viewed, vwErr := diff.LoadViewedState(org, repoName, key, base, head)
 
 	m := Model{
 		session:        session,
@@ -457,7 +458,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		path := filePathOf(m.files[m.fileIdx])
 		nowViewed := m.viewed.Toggle(path)
 		base, head := latestSnapshotSHAs(m.session)
-		if err := m.viewed.Save(m.org, m.repoName, m.session.PRNumber, base, head); err != nil {
+		if err := m.viewed.Save(m.org, m.repoName, diff.KeyForSession(m.session), base, head); err != nil {
 			m.statusMsg = fmt.Sprintf("error saving viewed state: %v", err)
 			return m, clearStatusCmd()
 		}
@@ -1260,7 +1261,7 @@ func (m *Model) loadSnapshotDiff(snapshotRef string) *diff.ParsedDiff {
 	}
 	baseSHA := snapshotRef[:idx]
 	headSHA := snapshotRef[idx+1:]
-	snapDir := diff.SnapshotDir(m.org, m.repoName, m.session.PRNumber, baseSHA, headSHA)
+	snapDir := diff.SnapshotDir(m.org, m.repoName, diff.KeyForSession(m.session), baseSHA, headSHA)
 	data, err := os.ReadFile(snapDir + "/diff.patch")
 	if err != nil {
 		return nil
@@ -1301,7 +1302,7 @@ func (m *Model) saveComments() error {
 	for i, c := range m.comments {
 		flat[i] = *c
 	}
-	return diff.SaveComments(m.org, m.repoName, m.session.PRNumber, flat)
+	return diff.SaveComments(m.org, m.repoName, diff.KeyForSession(m.session), flat)
 }
 
 func (m *Model) toggleCommentResolved(id string, resolved bool) tea.Cmd {
