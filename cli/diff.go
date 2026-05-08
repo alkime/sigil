@@ -12,6 +12,8 @@ import (
 type DiffCmd struct {
 	Session      string               `short:"s" help:"Use specific session ID (skip auto-detect)."`
 	Draft        bool                 `help:"Include draft PRs in auto-detect."`
+	Local        bool                 `help:"Review against the default branch without a PR (auto-detected)."`
+	Base         string               `help:"Base ref to diff against. Implies --local. Overrides default-branch auto-detect."`
 	GetComments  DiffGetCommentsCmd   `cmd:"" name:"get-comments" help:"Print comments on the current PR review session."`
 	ListSessions DiffListSessionsCmd  `cmd:"" name:"list-sessions" help:"List locally-persisted review sessions (current repo by default)."`
 	ReplyComment DiffReplyCommentCmd  `cmd:"" name:"reply-comment" help:"Append a reply to a comment."`
@@ -24,6 +26,8 @@ type DiffCmd struct {
 func (c *DiffCmd) AfterApply(ctx *CLIContext) error {
 	ctx.DiffSession = c.Session
 	ctx.DiffDraft = c.Draft
+	ctx.DiffLocal = c.Local || c.Base != ""
+	ctx.DiffBaseRef = c.Base
 	return nil
 }
 
@@ -39,6 +43,8 @@ func (c *DiffTUICmd) Run(ctx *CLIContext) error {
 		SessionID:    ctx.DiffSession,
 		IncludeDraft: ctx.DiffDraft,
 		CWD:          cwd,
+		Local:        ctx.DiffLocal,
+		BaseRef:      ctx.DiffBaseRef,
 	}
 	return dtui.RunWithResolve(context.Background(), opts)
 }

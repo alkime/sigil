@@ -19,13 +19,15 @@ func (c *DiffGetCommentsCmd) Run(ctx *CLIContext) error {
 	session, _, _, err := diff.Resolve(context.Background(), diff.ResolveOpts{
 		SessionID:    ctx.DiffSession,
 		IncludeDraft: ctx.DiffDraft,
+		Local:        ctx.DiffLocal,
+		BaseRef:      ctx.DiffBaseRef,
 	})
 	if err != nil {
 		return fmt.Errorf("resolve session: %w", err)
 	}
 
 	org, repo := splitRepo(session.Repo)
-	comments, err := diff.LoadComments(org, repo, session.PRNumber)
+	comments, err := diff.LoadComments(org, repo, diff.KeyForSession(session))
 	if err != nil {
 		return fmt.Errorf("load comments: %w", err)
 	}

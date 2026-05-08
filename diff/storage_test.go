@@ -26,11 +26,11 @@ func TestSessionRoundTrip(t *testing.T) {
 		},
 	}
 
-	if err := SaveSession("org", "repo", 42, s); err != nil {
+	if err := SaveSession("org", "repo", PRSessionKey(42), s); err != nil {
 		t.Fatalf("SaveSession: %v", err)
 	}
 
-	got, err := LoadSession("org", "repo", 42)
+	got, err := LoadSession("org", "repo", PRSessionKey(42))
 	if err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}
@@ -79,11 +79,11 @@ func TestCommentsRoundTrip(t *testing.T) {
 		},
 	}
 
-	if err := SaveComments("org", "repo", 42, comments); err != nil {
+	if err := SaveComments("org", "repo", PRSessionKey(42), comments); err != nil {
 		t.Fatalf("SaveComments: %v", err)
 	}
 
-	got, err := LoadComments("org", "repo", 42)
+	got, err := LoadComments("org", "repo", PRSessionKey(42))
 	if err != nil {
 		t.Fatalf("LoadComments: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestXDGOverride(t *testing.T) {
 func TestMissingFileReturnsNil(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
-	s, err := LoadSession("no-org", "no-repo", 999)
+	s, err := LoadSession("no-org", "no-repo", PRSessionKey(999))
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -128,7 +128,7 @@ func TestMissingFileReturnsNil(t *testing.T) {
 		t.Fatal("expected nil session")
 	}
 
-	comments, err := LoadComments("no-org", "no-repo", 999)
+	comments, err := LoadComments("no-org", "no-repo", PRSessionKey(999))
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -140,10 +140,10 @@ func TestMissingFileReturnsNil(t *testing.T) {
 func TestFlockContention(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
-	const pr = 1
+	key := PRSessionKey(1)
 	org, repo := "org", "repo"
 
-	if err := SaveComments(org, repo, pr, nil); err != nil {
+	if err := SaveComments(org, repo, key, nil); err != nil {
 		t.Fatalf("initial save: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestFlockContention(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			comments := []Comment{{ID: "uuid", Body: "body", Author: "author"}}
-			if err := SaveComments(org, repo, pr, comments); err != nil {
+			if err := SaveComments(org, repo, key, comments); err != nil {
 				errs <- err
 			}
 		}(i)
@@ -168,7 +168,7 @@ func TestFlockContention(t *testing.T) {
 		t.Errorf("concurrent SaveComments error: %v", err)
 	}
 
-	got, err := LoadComments(org, repo, pr)
+	got, err := LoadComments(org, repo, key)
 	if err != nil {
 		t.Fatalf("LoadComments after contention: %v", err)
 	}
@@ -218,11 +218,11 @@ func TestPartialWriteSafety(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
 	comments := []Comment{{ID: "original", Body: "original body", Author: "james"}}
-	if err := SaveComments("org", "repo", 1, comments); err != nil {
+	if err := SaveComments("org", "repo", PRSessionKey(1), comments); err != nil {
 		t.Fatalf("initial save: %v", err)
 	}
 
-	got, err := LoadComments("org", "repo", 1)
+	got, err := LoadComments("org", "repo", PRSessionKey(1))
 	if err != nil {
 		t.Fatalf("LoadComments: %v", err)
 	}

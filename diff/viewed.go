@@ -36,8 +36,8 @@ func NewViewedState() *ViewedState {
 // LoadViewedState reads the viewed-state file for a snapshot. Always returns
 // a non-nil *ViewedState — an empty state when the file doesn't exist.
 // Returns an error only when the file exists but can't be parsed.
-func LoadViewedState(org, repo string, pr int, baseSHA, headSHA string) (*ViewedState, error) {
-	path := viewedStatePath(org, repo, pr, baseSHA, headSHA)
+func LoadViewedState(org, repo string, key SessionKey, baseSHA, headSHA string) (*ViewedState, error) {
+	path := viewedStatePath(org, repo, key, baseSHA, headSHA)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -58,8 +58,8 @@ func LoadViewedState(org, repo string, pr int, baseSHA, headSHA string) (*Viewed
 
 // Save writes the state to the snapshot dir, creating the dir if necessary.
 // Paths are sorted for stable on-disk content.
-func (v *ViewedState) Save(org, repo string, pr int, baseSHA, headSHA string) error {
-	dir := SnapshotDir(org, repo, pr, baseSHA, headSHA)
+func (v *ViewedState) Save(org, repo string, key SessionKey, baseSHA, headSHA string) error {
+	dir := SnapshotDir(org, repo, key, baseSHA, headSHA)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -123,6 +123,6 @@ func (v *ViewedState) sortedPaths() []string {
 	return out
 }
 
-func viewedStatePath(org, repo string, pr int, baseSHA, headSHA string) string {
-	return filepath.Join(SnapshotDir(org, repo, pr, baseSHA, headSHA), ViewedStateFileName)
+func viewedStatePath(org, repo string, key SessionKey, baseSHA, headSHA string) string {
+	return filepath.Join(SnapshotDir(org, repo, key, baseSHA, headSHA), ViewedStateFileName)
 }

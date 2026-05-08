@@ -18,6 +18,13 @@ type ResolveOpts struct {
 	SessionID    string
 	IncludeDraft bool
 	CWD          string
+
+	// Local enables no-PR mode: diff HEAD against an auto-detected (or
+	// explicit) base ref, persist locally, no GitHub interaction.
+	Local bool
+	// BaseRef overrides the auto-detected default branch for Local mode.
+	// When non-empty it implies Local=true.
+	BaseRef string
 }
 
 // PRCandidate is a PR found during auto-detection across worktrees.
@@ -48,6 +55,9 @@ type snapshotMeta struct {
 func Resolve(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, string, error) {
 	if opts.SessionID != "" {
 		return loadSessionByID(ctx, opts)
+	}
+	if opts.Local || opts.BaseRef != "" {
+		return resolveLocal(ctx, opts)
 	}
 	return autoDetect(ctx, opts)
 }
@@ -113,7 +123,7 @@ func autoDetect(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, s
 	}
 
 	if len(candidates) == 0 {
-		return nil, nil, "", fmt.Errorf("no open PRs found across worktrees — create one with: gh pr create")
+		return nil, nil, "", fmt.Errorf("no open PRs found across worktrees — create one with: gh pr create, or run with --local to review against the default branch")
 	}
 	if len(candidates) > 1 {
 		return nil, nil, "", &ErrPickerNeeded{Candidates: candidates}
@@ -128,7 +138,8 @@ func resolveCandidate(ctx context.Context, c PRCandidate, org, repoName string) 
 		return nil, nil, "", fmt.Errorf("get head SHA: %w", err)
 	}
 
-	session, err := LoadSession(org, repoName, c.PRNumber)
+	key := PRSessionKey(c.PRNumber)
+	session, err := LoadSession(org, repoName, key)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("load session: %w", err)
 	}
@@ -141,7 +152,7 @@ func resolveCandidate(ctx context.Context, c PRCandidate, org, repoName string) 
 			}
 			return session, pd, c.WorktreePath, nil
 		}
-		return captureNewSnapshot(ctx, session, c, org, repoName, headSHA)
+		return captureNewSnapshotPR(ctx, session, c, org, repoName, headSHA)
 	}
 
 	return createSession(ctx, c, org, repoName, headSHA)
@@ -154,6 +165,7 @@ func createSession(ctx context.Context, c PRCandidate, org, repoName, headSHA st
 	session := &Session{
 		ID:         newUUID(),
 		Repo:       c.Repo,
+		Kind:       SessionKindPR,
 		PRNumber:   c.PRNumber,
 		PRTitle:    c.PRTitle,
 		BaseBranch: c.BaseRefName,
@@ -164,12 +176,13 @@ func createSession(ctx context.Context, c PRCandidate, org, repoName, headSHA st
 		UpdatedAt:  now,
 	}
 
-	pd, err := captureSnapshot(ctx, session, c, org, repoName, baseSHA, headSHA)
+	pd, err := capturePRSnapshot(ctx, session, c, org, repoName, baseSHA, headSHA)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
-	if err := SaveSession(org, repoName, c.PRNumber, session); err != nil {
+	key := PRSessionKey(c.PRNumber)
+	if err := SaveSession(org, repoName, key, session); err != nil {
 		return nil, nil, "", fmt.Errorf("save session: %w", err)
 	}
 	if err := upsertIndex(org, repoName, session); err != nil {
@@ -179,8 +192,8 @@ func createSession(ctx context.Context, c PRCandidate, org, repoName, headSHA st
 	return session, pd, c.WorktreePath, nil
 }
 
-func captureNewSnapshot(ctx context.Context, session *Session, c PRCandidate, org, repoName, headSHA string) (*Session, *ParsedDiff, string, error) {
-	pd, err := captureSnapshot(ctx, session, c, org, repoName, session.BaseSHA, headSHA)
+func captureNewSnapshotPR(ctx context.Context, session *Session, c PRCandidate, org, repoName, headSHA string) (*Session, *ParsedDiff, string, error) {
+	pd, err := capturePRSnapshot(ctx, session, c, org, repoName, session.BaseSHA, headSHA)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -188,7 +201,8 @@ func captureNewSnapshot(ctx context.Context, session *Session, c PRCandidate, or
 	session.HeadSHA = headSHA
 	session.UpdatedAt = time.Now().UTC()
 
-	if err := SaveSession(org, repoName, c.PRNumber, session); err != nil {
+	key := PRSessionKey(c.PRNumber)
+	if err := SaveSession(org, repoName, key, session); err != nil {
 		return nil, nil, "", fmt.Errorf("save session: %w", err)
 	}
 	if err := upsertIndex(org, repoName, session); err != nil {
@@ -198,13 +212,132 @@ func captureNewSnapshot(ctx context.Context, session *Session, c PRCandidate, or
 	return session, pd, c.WorktreePath, nil
 }
 
-func captureSnapshot(ctx context.Context, session *Session, c PRCandidate, org, repoName, baseSHA, headSHA string) (*ParsedDiff, error) {
+func capturePRSnapshot(ctx context.Context, session *Session, c PRCandidate, org, repoName, baseSHA, headSHA string) (*ParsedDiff, error) {
 	diffBytes, err := GHPRDiff(ctx, c.Repo, c.PRNumber)
 	if err != nil {
 		return nil, fmt.Errorf("gh pr diff: %w", err)
 	}
+	return writeSnapshot(ctx, session, c.WorktreePath, c.Branch, PRSessionKey(c.PRNumber), org, repoName, baseSHA, headSHA, diffBytes)
+}
 
-	snapDir := SnapshotDir(org, repoName, c.PRNumber, baseSHA, headSHA)
+// resolveLocal handles the no-PR path: --local with optional --base override.
+// Auto-detects the default branch via DefaultBranch when BaseRef is empty.
+func resolveLocal(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDiff, string, error) {
+	cwd := opts.CWD
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("get working directory: %w", err)
+		}
+	}
+
+	branch, err := CurrentBranch(ctx, cwd)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("current branch: %w", err)
+	}
+	if branch == "" {
+		return nil, nil, "", fmt.Errorf("--local requires a checked-out branch (HEAD is detached)")
+	}
+
+	baseRef := opts.BaseRef
+	if baseRef == "" {
+		baseRef, err = DefaultBranch(ctx, cwd)
+		if err != nil {
+			return nil, nil, "", err
+		}
+	}
+	if baseRef == branch {
+		return nil, nil, "", fmt.Errorf("--local: current branch (%s) is the same as base ref — switch branches or pass a different --base", branch)
+	}
+
+	_, owner, repoName, err := OriginRemote(ctx, cwd)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("origin remote: %w", err)
+	}
+	repoFull := owner + "/" + repoName
+
+	headSHA, err := revParse(ctx, cwd, "HEAD")
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("get head SHA: %w", err)
+	}
+	baseSHA := getBaseSHA(ctx, cwd, baseRef)
+	if baseSHA == "" {
+		return nil, nil, "", fmt.Errorf("couldn't resolve base ref %q (tried origin/%s and %s)", baseRef, baseRef, baseRef)
+	}
+
+	key := LocalSessionKey(branch, baseRef)
+	session, err := LoadSession(owner, repoName, key)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("load session: %w", err)
+	}
+
+	if session != nil {
+		if session.HeadSHA == headSHA && session.BaseSHA == baseSHA {
+			pd, pdErr := loadLatestSnapshotDiffLocal(session, owner, repoName, key)
+			if pdErr != nil {
+				return nil, nil, "", pdErr
+			}
+			return session, pd, cwd, nil
+		}
+		return captureNewSnapshotLocal(ctx, session, cwd, branch, baseRef, key, owner, repoName, baseSHA, headSHA)
+	}
+
+	now := time.Now().UTC()
+	session = &Session{
+		ID:         newUUID(),
+		Repo:       repoFull,
+		Kind:       SessionKindLocal,
+		BaseBranch: baseRef,
+		BaseSHA:    baseSHA,
+		HeadSHA:    headSHA,
+		Branch:     branch,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	pd, err := captureLocalSnapshot(ctx, session, cwd, branch, key, owner, repoName, baseSHA, headSHA)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if err := SaveSession(owner, repoName, key, session); err != nil {
+		return nil, nil, "", fmt.Errorf("save session: %w", err)
+	}
+	if err := upsertIndex(owner, repoName, session); err != nil {
+		return nil, nil, "", fmt.Errorf("upsert index: %w", err)
+	}
+	return session, pd, cwd, nil
+}
+
+func captureNewSnapshotLocal(ctx context.Context, session *Session, cwd, branch, baseRef string, key SessionKey, org, repoName, baseSHA, headSHA string) (*Session, *ParsedDiff, string, error) {
+	pd, err := captureLocalSnapshot(ctx, session, cwd, branch, key, org, repoName, baseSHA, headSHA)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	session.BaseSHA = baseSHA
+	session.HeadSHA = headSHA
+	session.UpdatedAt = time.Now().UTC()
+	if err := SaveSession(org, repoName, key, session); err != nil {
+		return nil, nil, "", fmt.Errorf("save session: %w", err)
+	}
+	if err := upsertIndex(org, repoName, session); err != nil {
+		return nil, nil, "", fmt.Errorf("upsert index: %w", err)
+	}
+	return session, pd, cwd, nil
+}
+
+func captureLocalSnapshot(ctx context.Context, session *Session, cwd, branch string, key SessionKey, org, repoName, baseSHA, headSHA string) (*ParsedDiff, error) {
+	diffBytes, err := gitDiff(ctx, cwd, baseSHA, headSHA)
+	if err != nil {
+		return nil, fmt.Errorf("git diff: %w", err)
+	}
+	return writeSnapshot(ctx, session, cwd, branch, key, org, repoName, baseSHA, headSHA, diffBytes)
+}
+
+// writeSnapshot persists diff.patch + meta.yaml under the snapshot dir, appends
+// the snapshot to session.Snapshots, and returns the parsed diff. Shared by PR
+// and local capture paths.
+func writeSnapshot(ctx context.Context, session *Session, cwd, branch string, key SessionKey, org, repoName, baseSHA, headSHA string, diffBytes []byte) (*ParsedDiff, error) {
+	snapDir := SnapshotDir(org, repoName, key, baseSHA, headSHA)
 	if err := os.MkdirAll(snapDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create snapshot dir: %w", err)
 	}
@@ -215,8 +348,8 @@ func captureSnapshot(ctx context.Context, session *Session, c PRCandidate, org, 
 
 	meta := snapshotMeta{
 		ObservedAt:        time.Now().UTC(),
-		Branch:            c.Branch,
-		HeadCommitMessage: headCommitMessage(ctx, c.WorktreePath, headSHA),
+		Branch:            branch,
+		HeadCommitMessage: headCommitMessage(ctx, cwd, headSHA),
 	}
 	metaBytes, err := yaml.Marshal(meta)
 	if err != nil {
@@ -232,12 +365,30 @@ func captureSnapshot(ctx context.Context, session *Session, c PRCandidate, org, 
 	return Parse(diffBytes)
 }
 
+// gitDiff produces a unified diff between base and head using the same
+// three-dot semantics GitHub uses for PRs (diff vs the merge-base).
+func gitDiff(ctx context.Context, cwd, base, head string) ([]byte, error) {
+	args := []string{"diff", base + "..." + head}
+	if cwd != "" {
+		args = append([]string{"-C", cwd}, args...)
+	}
+	out, err := exec.CommandContext(ctx, "git", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("git diff %s...%s: %w", base, head, err)
+	}
+	return out, nil
+}
+
 func loadLatestSnapshotDiff(session *Session, org, repoName string) (*ParsedDiff, error) {
+	return loadLatestSnapshotDiffLocal(session, org, repoName, KeyForSession(session))
+}
+
+func loadLatestSnapshotDiffLocal(session *Session, org, repoName string, key SessionKey) (*ParsedDiff, error) {
 	if len(session.Snapshots) == 0 {
 		return &ParsedDiff{}, nil
 	}
 	snap := session.Snapshots[len(session.Snapshots)-1]
-	snapDir := SnapshotDir(org, repoName, session.PRNumber, snap.Base, snap.Head)
+	snapDir := SnapshotDir(org, repoName, key, snap.Base, snap.Head)
 	diffBytes, err := os.ReadFile(filepath.Join(snapDir, "diff.patch"))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -257,6 +408,7 @@ func loadSessionByID(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDi
 
 	var found *Session
 	var foundOrg, foundRepo string
+	var foundKey SessionKey
 
 	err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info == nil || info.IsDir() || filepath.Base(path) != "session.yaml" {
@@ -274,9 +426,10 @@ func loadSessionByID(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDi
 			found = &s
 			rel, _ := filepath.Rel(base, path)
 			parts := strings.SplitN(filepath.ToSlash(rel), "/", 4)
-			if len(parts) >= 2 {
+			if len(parts) >= 3 {
 				foundOrg = parts[0]
 				foundRepo = parts[1]
+				foundKey = SessionKey(parts[2])
 			}
 			return filepath.SkipAll
 		}
@@ -289,7 +442,7 @@ func loadSessionByID(ctx context.Context, opts ResolveOpts) (*Session, *ParsedDi
 		return nil, nil, "", fmt.Errorf("session %s not found", id)
 	}
 
-	pd, err := loadLatestSnapshotDiff(found, foundOrg, foundRepo)
+	pd, err := loadLatestSnapshotDiffLocal(found, foundOrg, foundRepo, foundKey)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -321,15 +474,18 @@ func upsertIndex(org, repoName string, session *Session) error {
 	if err != nil {
 		return err
 	}
-	sessionPath := SessionDir(org, repoName, session.PRNumber)
+	key := KeyForSession(session)
+	sessionPath := SessionDir(org, repoName, key)
 	for i, e := range entries {
-		if e.PRNumber == session.PRNumber {
+		if e.SessionKey() == key {
+			entries[i].Key = string(key)
 			entries[i].UpdatedAt = session.UpdatedAt
 			entries[i].Path = sessionPath
 			return SaveIndex(org, repoName, entries)
 		}
 	}
 	entries = append(entries, SessionsIndexEntry{
+		Key:       string(key),
 		PRNumber:  session.PRNumber,
 		Path:      sessionPath,
 		UpdatedAt: session.UpdatedAt,

@@ -24,9 +24,11 @@ type CLI struct {
 // CLIContext carries shared dependencies for all subcommands.
 type CLIContext struct {
 	Out io.Writer
-	// DiffSession and DiffDraft are populated by DiffCmd.AfterApply for sub-subcommands.
+	// Diff* fields are populated by DiffCmd.AfterApply for sub-subcommands.
 	DiffSession string
 	DiffDraft   bool
+	DiffLocal   bool
+	DiffBaseRef string
 }
 
 // NormalizeID converts a bare integer or short string into a zero-padded

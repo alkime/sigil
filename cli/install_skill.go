@@ -148,12 +148,19 @@ Rules:
 
 ### Procedure when writing ` + "`.sigil/review-order.yaml`" + ` at PR creation
 
-1. **Check ` + "`.gitignore`" + `** for an entry that covers ` + "`.sigil/`" + ` (e.g. ` + "`.sigil/`" + `, ` + "`.sigil`" + `, or a broader pattern like ` + "`.*/`" + ` that would match).
-2. **If no entry exists, ASK THE USER** before modifying ` + "`.gitignore`" + `:
-   > "I'd like to add ` + "`.sigil/`" + ` to your ` + "`.gitignore`" + ` so the review-order file stays local to this worktree. OK to add it?"
-   - On yes: append ` + "`.sigil/`" + ` to ` + "`.gitignore`" + `, then write ` + "`.sigil/review-order.yaml`" + `.
-   - On no / no answer: skip writing the review-order file entirely — don't risk committing the file into the repo.
-3. **If an entry already covers it**, just write ` + "`.sigil/review-order.yaml`" + `.
+The ` + "`.sigil/`" + ` directory must be ignored by git so the review-order file stays
+local to the worktree. Default to ` + "`.git/info/exclude`" + ` (per-clone, never tracked,
+never shared with teammates) — same glob syntax as ` + "`.gitignore`" + `.
+
+Order of checks before writing the file:
+
+1. **If ` + "`.gitignore`" + ` already covers ` + "`.sigil/`" + `** (e.g. ` + "`.sigil/`" + `, ` + "`.sigil`" + `, or a broader pattern like ` + "`.*/`" + `) → write ` + "`.sigil/review-order.yaml`" + `.
+2. **If ` + "`.git/info/exclude`" + ` already covers ` + "`.sigil/`" + `** → write ` + "`.sigil/review-order.yaml`" + `.
+3. **Otherwise**, append ` + "`.sigil/`" + ` to ` + "`.git/info/exclude`" + ` (no need to ask — this file is local to the clone and never committed), then write ` + "`.sigil/review-order.yaml`" + `.
+4. **Only if ` + "`.git/info/exclude`" + ` is unwritable** (rare — e.g., readonly ` + "`.git`" + `): skip writing the review-order file rather than risk committing it.
+
+Use ` + "`.gitignore`" + ` (instead of ` + "`.git/info/exclude`" + `) only when the user explicitly
+asks to share the ignore rule with their team.
 
 When present, ` + "`sigil diff`" + ` opens with your ordering and shows the note inline
 next to the active file. ` + "`Shift+O`" + ` toggles between your order and the default
